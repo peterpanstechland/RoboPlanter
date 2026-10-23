@@ -1,0 +1,66 @@
+# RoboPlanter — original SenseCAP Indicator client
+
+This project runs on the **original 4-inch, 480×480 SenseCAP Indicator's ESP32-S3** with OPI PSRAM. It displays XIAO sensor readings and sends manual HTTP commands over Wi-Fi. It contains real network code, not simulated readings. It does not read the Indicator's built-in sensors, initialise the internal ESP32–RP2040 UART, reset the RP2040, or replace RP2040 firmware. Do not connect an additional UART/GPIO cable between Indicator and XIAO.
+
+## Build and configuration
+
+1. Copy `include/local_config.example.h` to `include/local_config.h` (ignored by Git).
+2. Set the actual XIAO SoftAP SSID, password and matching device token. Defaults are `RoboPlanter-XXXX`, `planter-demo`, `http://192.168.4.1`, `change-me-before-use`. The placeholder SSID is intentionally not automatically discovered. The default token is for setup only; change both boards together.
+3. Build from this directory with `pio run -e sensecap_indicator`. Building does not upload firmware.
+
+Pinned toolchain: PlatformIO `espressif32@6.12.0` / Arduino ESP32 2.0.17, GFX Library for Arduino **1.4.7**, ArduinoJson 6.21.5. The environment selects 8 MB flash and octal PSRAM. Seeed's current Arduino tutorial uses core 3.1.2 / GFX 1.5.3. That library version does not compile against this core's IDF 4.4 RGB/SPI structures, so this project pins 1.4.7: its [official RGB driver](https://github.com/moononournation/Arduino_GFX/blob/v1.4.7/src/databus/Arduino_ESP32RGBPanel.cpp) explicitly targets Arduino core versions below 3. The display pin map, ST7701 type1 table and application API remain the same. A successful compile does not establish that a particular physical screen batch works.
+
+Build verified on 2026-10-24 with the workspace `tools/build.ps1 -Target indicator`: **SUCCESS**. Static RAM is 46,064 / 327,680 bytes (14.1%); application flash is 860,833 / 3,342,336 bytes (25.8%) with the empty album. The optional photo branch was also compiled successfully using one generated test image. Runtime allocations, including the 480×480×2-byte PSRAM frame buffer and HTTP task stack, are additional to the static RAM figure. The output is `.pio/build/sensecap_indicator/firmware.bin`; logs are in the workspace's `tmp/indicator-ui-build.log` and `tmp/indicator-ui-photo-build.log`. The test image was removed before the final build.
+
+**No upload is performed by this task.** A later hardware test must target the Indicator's ESP32 CH340 port, not the RP2040 USB port. The compiled UI replaces the ESP32's factory application. Keep the factory ESP32 image/restore instructions available before a later authorised flash.
+
+## Desktop companion UI
+
+Chinese five-page flow: face home → today → information → photos → focus timer. Tap the face to enter today, swipe left/right to navigate, and use the top button to choose eight original themes. Theme choice persists in Preferences. The offline 361-glyph bitmap subset is generated from Noto Sans SC under OFL; its source/license and regeneration steps are in `assets/fonts/README.md`.
+
+The timer supports 25/5/15 minutes, start/pause/resume/reset, and continues through navigation and theme changes. Running or paused sessions must be reset before changing duration. Completion waits for a manual restart. There is no sound, phone notification, or YOYO timer/theme API yet. Power cycling resets the timer. Photos are optional local RGB565 assets, packed before building; the default screen honestly shows an empty album. See [the UI and photo guide](../../docs/indicator-ui.md).
+
+Touch is interpreted only on a real release; moving away and back is not a tap. I²C errors, multiple contacts, and out-of-range coordinates cancel the gesture until a real release. A swipe or theme selection never emits an actuator request. Hardware buttons live in a separate panel opened from Today. Decorative faces do not imply valid readings or plant health. Static screens refresh at most once per second, while the home expression is capped at 8 frames per second; real-device performance still needs checking.
+
+## Hardware assumptions and official sources
+
+Pin definitions come from Seeed's [Arduino tutorial](https://wiki.seeedstudio.com/SenseCAP_Indicator_ESP32_Arduino/) and [official board source](https://github.com/Seeed-Solution/SenseCAP_Indicator_ESP32/blob/77edb8d2b9a92fc67965c1b2d4a838f0d09a1800/components/bsp/src/boards/sensecap_indicator_board.c). Display configuration is ST7701, 12 MHz, 480×480, matching the full Arduino example linked by that tutorial. The tutorial's introductory generic `Arduino_SWSPI` sketch is insufficient for expander CS; this project explicitly routes CS through PCA9535 P04.
+
+| Signal | ESP32 pin / expander bit |
+| --- | --- |
+| RGB DE / VSYNC / HSYNC / PCLK | 18 / 17 / 16 / 21 |
+| R0…R4 | 4, 3, 2, 1, 0 |
+| G0…G5 | 10, 9, 8, 7, 6, 5 |
+| B0…B4 | 15, 14, 13, 12, 11 |
+| Backlight | 45 |
+| ST7701 software SPI SCK / MOSI | 41 / 48 |
+| Internal I²C SDA / SCL | 39 / 40, 400 kHz |
+| PCA9535 address / LCD CS / LCD reset | 0x20 / P04 / P05 |
+| Touch interrupt / touch reset | P06 / P07 |
+| FT5x06 touch address | **0x48** |
+| Reserved internal UART, unused here | ESP32 RX20 / TX19 |
+
+RGB timings are H polarity 1/front 10/pulse 8/back 50, V polarity 1/front 10/pulse 8/back 20. Arduino_GFX's `st7701_type1_init_operations` provides the panel register sequence; the two orientation settings C7=04 and 36=10 match Seeed's [linked full Arduino example](https://github.com/LongDirtyAnimAlf/SenseCap/blob/8003fb320db707f051d8b7d14d5be4d95e0e870c/SHT31Demo/ESP32/src/Display/Indicator_RGB_Display.h). Touch mapping is `(479−rawX, 479−rawY)`, matching that example's [rotation-0 touch code](https://github.com/LongDirtyAnimAlf/SenseCap/blob/8003fb320db707f051d8b7d14d5be4d95e0e870c/SHT31Demo/ESP32/touch.h).
+
+**Original-board LCD batches still matter.** The official BSP calls the ST7701/0x48 screen configuration `CONFIG_SENSECAP_INDICATOR_SCREEN_GX`; its other screen configuration uses 0x38. Those are LCD configuration names in the original Indicator SDK, not proof of a new whole-device model. See the [official FT5x06 driver](https://github.com/Seeed-Solution/SenseCAP_Indicator_ESP32/blob/77edb8d2b9a92fc67965c1b2d4a838f0d09a1800/components/i2c_devices/touch_panel/ft5x06.c) and [panel initialisation](https://github.com/Seeed-Solution/SenseCAP_Indicator_ESP32/blob/77edb8d2b9a92fc67965c1b2d4a838f0d09a1800/components/bsp/src/boards/lcd_panel_config.c). This firmware fixes 0x48 explicitly; it does not scan and guess. If touch is absent, the UI/serial log report it. Confirm the actual screen batch before changing addresses or register tables.
+
+The minimal expander driver reads/modifies **only port 0** output/configuration bytes. Other port-0 bits are preserved; port 1, including RP2040 reset, is untouched. FT5x06 touch settings and register addresses follow the official driver. Arduino_GFX remains an external library dependency with its upstream licence; no full third-party driver was vendored here.
+
+## Network and command behaviour
+
+The HTTP worker is a FreeRTOS task on core 0; drawing and touch remain in the Arduino loop. No HTTP request runs inside touch handling. Wi-Fi reconnects without replaying actuator commands. HTTP connect/read timeouts are 1500 ms each, redirect following is disabled, and bodies are bounded (state 4096 bytes, command/result reply 2048 bytes). The XIAO endpoints must return Content-Length; chunked/unknown-length replies are rejected. State polling is approximately once per second, after previous network work completes.
+
+- `GET /api/v1/state`, header `X-Device-Token`, requires `schema_version: 1`. The state fields follow `docs`' shared XIAO API. Sensor values missing, invalid or uncalibrated are shown as `--`, never fabricated zero. Air/UV are explicitly raw ADC readings, not gas concentration or UV index.
+- A reading is stale when XIAO's `sample_age_ms` plus time since receiving it exceeds 5 seconds, or its age is absent. Offline/stale readings are labelled and dimmed. Unknown capabilities are unavailable. Water/light/print require fresh state and `enabled: true`.
+- `POST /api/v1/command` carries `request_id` and an action: `water` with a configured 2000 ms pulse, `stop_water`, `light` with `on`, or `print` with an English check-in note. Request IDs contain an ESP32 random boot nonce and monotonic sequence, within the 32-character limit.
+- Only one ordinary command is outstanding. Touch repeats are debounced. STOP has a separate priority queue, cancels any unsent ordinary command, and remains available with stale data when Wi-Fi is connected and the pump was reported enabled. It cannot interrupt an HTTP operation already waiting for a timeout. This is a network stop button; the XIAO must independently enforce pump duration and output safety.
+- `queued`, `sending`, `accepted`/`running`, `completed`, and failure are distinct. A 2xx response alone is not completion. State polls reconcile a matching `last_command.request_id`. While a transmitted command remains unresolved (including `accepted` or `unknown`), each polling cycle also calls authenticated `GET /api/v1/result?request_id=<id>` after the state poll. This reads the XIAO's result cache even if another controller's command has replaced `last_command`. A returned ID must match, and responses for a superseded request cannot overwrite a new STOP or an acknowledgement.
+- **Water/print are never automatically retried**, including a lost response. Only the read-only result lookup is repeated. An ambiguous response or missing final result becomes `unknown`, blocks ordinary actions, and asks the operator to inspect the planter. A result `404` with `request_not_found` also remains unknown: cache eviction or a device restart can erase a command that already executed. The explicit inspection acknowledgement button unlocks ordinary actions without resending; STOP remains available. The screen does not invent completion when no matching result is available.
+
+The connection is local HTTP protected by the XIAO's Wi-Fi and matching token, not TLS. The token is not printed in logs or displayed on screen. It is not intended as a public Internet endpoint.
+
+## On-device checks still required
+
+After an authorised ESP32 upload, first validate screen orientation and all four touch targets with XIAO actuator capabilities disabled. Then verify the configured SSID/token, invalid and uncalibrated sensors, Wi-Fi loss, stale-state appearance, disabled controls, command acceptance versus completion, and missing-response handling. Test pump timeout and STOP with safe disconnected/bench loads before water or printer power is connected. A compile-only result cannot verify panel timing, touch alignment, physical output behaviour or actual network response latency.
+
+For result-cache interoperability, submit a screen water request, then send a distinct light request from the phone/BLE controller before watering completes. Confirm the screen still reports the water request's final result through `/api/v1/result`, even when `/state.last_command` belongs to the light request. Also test a deliberately lost POST response followed by successful result lookup; a missing/evicted result returning 404; and STOP arriving while an old result GET is in flight. None of these cases should retransmit the water POST, mark a 404 as "not executed", or let an old response overwrite STOP.

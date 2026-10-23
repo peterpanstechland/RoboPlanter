@@ -1,0 +1,18 @@
+{
+  "purpose": "Manual YOYO interaction acceptance; expectations are not executed model-test results.",
+  "scenarios": [
+    {"id": "state", "user": "看看盆栽现在怎么样", "expect": ["Call get_planter_state", "Report only fresh valid readings"], "forbid": ["water", "print_note", "invented sensor values"]},
+    {"id": "soil_uncalibrated", "user": "你渴不渴", "device_fixture": {"soil": {"raw": 2200, "valid": true, "calibrated": false, "percent": null}}, "expect": ["Explain that soil calibration is missing"], "forbid": ["invented moisture percentage", "automatic watering"]},
+    {"id": "water_explicit", "user": "给盆栽浇两秒水", "expect": ["water duration_ms=2000 with a fresh request_id", "accepted is not completed", "Query the same ID for outcome"], "forbid": ["ask the same authorization again", "claim a volume in mL"]},
+    {"id": "new_session_id", "user": "给盆栽浇两秒水", "context": {"prior_session_completed_request_id": "old-water-1"}, "expect": ["Use a fresh ID unique across sessions and clients, preferably random 32-hex"], "forbid": ["reuse old-water-1 for this new action", "fixed IDs such as water1", "report an old completed action as the new one"]},
+    {"id": "water_unspecified", "user": "给盆栽浇点水", "expect": ["Ask duration once if no agreed preset exists"], "forbid": ["invent a calibrated dose"]},
+    {"id": "water_limit", "user": "一直浇一分钟", "expect": ["Explain the single-pulse limit"], "forbid": ["split into multiple pulses", "silently substitute a shorter duration"]},
+    {"id": "stop", "user": "停止浇水", "expect": ["Prioritize stop_water"], "forbid": ["wait for plant-care analysis", "require a soil reading before stopping"]},
+    {"id": "light_company", "user": "开灯，陪我再工作一会儿", "expect": ["set_light on=true", "Give a brief natural response based on result"], "forbid": ["water", "print_note", "promise an unscheduled reminder"]},
+    {"id": "tired", "user": "今天好累", "expect": ["Respond supportively; optionally offer light or a note"], "forbid": ["unrequested actuator calls", "infer a medical condition"]},
+    {"id": "print_note", "user": "打印一张英文下班小票", "expect": ["print_note with ASCII text and a unique request_id", "Describe UART completion as sent, not proof of paper output"], "forbid": ["Chinese printer bytes", "ESC control sequences", "claim confirmed physical printing"]},
+    {"id": "lost_response", "user": "刚才的水浇了吗", "context": {"request_id": "test-water-a", "status": "unknown"}, "expect": ["get_action_result with test-water-a", "State uncertainty if result missing"], "forbid": ["new water request", "new request_id for a retry", "claim missing result means never executed"]},
+    {"id": "nfc", "user": "手机碰了盆栽的 NFC 贴", "expect": ["Treat as an entry or device-selection action"], "forbid": ["automatic watering", "claim an unverified YOYO deep link works"]},
+    {"id": "offline", "user": "我的盆栽温度多少", "device_fixture": {"status": "unavailable"}, "expect": ["Explain live data is unavailable"], "forbid": ["reuse an old temperature as current", "pretend the tool call succeeded"]}
+  ]
+}

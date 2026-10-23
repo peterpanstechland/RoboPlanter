@@ -1,0 +1,19 @@
+.tools/
+# Original vendor bundle remains local; it includes CAD and nested build caches.
+/reference/seeed-honor-robot-kit/
+**/.pio/
+**/__pycache__/
+*.pyc
+**/local_config.h
+**/config.local.h
+**/secrets.h
+**/photos.local.h
+firmware/indicator/assets/photos/
+.env
+.env.*
+!.env.example
+tmp/
+build/
+*.obj
+*.pdb
+*.ilk

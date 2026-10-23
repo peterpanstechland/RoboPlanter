@@ -1,0 +1,3 @@
+.pio/
+*.log
+include/local_config.h

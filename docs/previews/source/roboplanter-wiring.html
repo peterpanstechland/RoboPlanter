@@ -1,0 +1,347 @@
+<div id="roboplanter-wiring-v1">
+  <h3>RoboPlanter 接线关系</h3>
+  <div class="viz-controls" aria-label="接线视图">
+    <button type="button" class="btn" data-view="signal" aria-pressed="true">信号</button>
+    <button type="button" class="btn" data-view="power" aria-pressed="false">供电</button>
+    <button type="button" class="btn btn-ghost" data-flow>演示一次流向</button>
+  </div>
+  <div class="viz-controls" data-network-controls>
+    <label class="form-label" for="rp-wifi-mode">屏幕 Wi-Fi 方案
+      <select class="form-select" id="rp-wifi-mode">
+        <option value="ap">XIAO SoftAP · 首版</option>
+        <option value="router">同一路由器 · 备选</option>
+      </select>
+    </label>
+    <span class="text-small text-muted">Indicator ↔ XIAO：Wi-Fi，无 UART 接线</span>
+  </div>
+  <div class="rp-diagram" data-diagram>
+    <svg class="rp-wires" role="img" aria-label="可点选器件的候选接线图">
+      <title>RoboPlanter 候选接线图</title>
+      <desc>点击器件查看引脚、供电与待核实条件。图中连线表示设计关系，并不表示实物已验证。</desc>
+      <g data-paths></g><g data-dots></g>
+    </svg>
+    <div class="rp-layout" data-nodes></div>
+  </div>
+  <div class="rp-legend text-small" data-legend></div>
+  <div class="card rp-detail" data-detail aria-live="polite"></div>
+  <div class="text-small text-muted rp-status" data-status aria-live="polite">候选接线 · 未进行实物测量与联调</div>
+</div>
+<style>
+  #roboplanter-wiring-v1 { color: var(--foreground); }
+  #roboplanter-wiring-v1 h3 { padding-right: 96px; }
+  #roboplanter-wiring-v1 .rp-diagram { position: relative; margin-top: 14px; }
+  #roboplanter-wiring-v1 .rp-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  #roboplanter-wiring-v1 .rp-layout { position: relative; display: grid; grid-template-columns: minmax(0,1fr) 48px minmax(0,1fr); row-gap: 22px; margin: 0 22px; padding: 8px 0 12px; }
+  #roboplanter-wiring-v1 .rp-node { min-width: 0; text-align: center; }
+  #roboplanter-wiring-v1 .rp-node-center { grid-column: 1 / -1; width: min(250px, 100%); justify-self: center; }
+  #roboplanter-wiring-v1 .rp-caption { margin-top: 4px; overflow-wrap: anywhere; color: var(--muted-foreground); }
+  #roboplanter-wiring-v1 .rp-wire { fill: none; stroke-width: 1.6; stroke: var(--border); transition: opacity .16s ease, stroke .16s ease; }
+  #roboplanter-wiring-v1 .rp-wire[data-kind="wireless"] { stroke-dasharray: 6 4; }
+  #roboplanter-wiring-v1 .rp-wire[data-kind="conditional"] { stroke-dasharray: 2 4; }
+  #roboplanter-wiring-v1 .rp-wire[data-kind="ground"] { stroke-width: 1; stroke: var(--muted-foreground); }
+  #roboplanter-wiring-v1 .rp-wire[data-rail="12"] { stroke: var(--viz-series-2); }
+  #roboplanter-wiring-v1 .rp-wire[data-rail="5"] { stroke: var(--viz-series-3); }
+  #roboplanter-wiring-v1 .rp-wire[data-rail="3.3"] { stroke: var(--viz-series-4); }
+  #roboplanter-wiring-v1 .rp-wire.is-dim { opacity: .26; }
+  #roboplanter-wiring-v1 .rp-wire.is-active:not([data-rail]):not([data-kind="ground"]) { stroke: var(--viz-series-1); stroke-width: 2.2; }
+  #roboplanter-wiring-v1 .rp-wire.is-active[data-rail] { stroke-width: 2.2; }
+  #roboplanter-wiring-v1 .rp-flow-dot { fill: var(--viz-series-1); }
+  #roboplanter-wiring-v1 .rp-legend { display: flex; gap: 10px 18px; flex-wrap: wrap; margin: 4px 0 12px; }
+  #roboplanter-wiring-v1 .rp-key { display: inline-flex; align-items: center; gap: 5px; }
+  #roboplanter-wiring-v1 .rp-key-line { width: 20px; height: 0; border-top: 2px solid var(--viz-series-1); }
+  #roboplanter-wiring-v1 .rp-key-line.wireless { border-top-style: dashed; }
+  #roboplanter-wiring-v1 .rp-key-line.conditional { border-top-style: dotted; }
+  #roboplanter-wiring-v1 .rp-key-line.rail12 { border-color: var(--viz-series-2); }
+  #roboplanter-wiring-v1 .rp-key-line.rail5 { border-color: var(--viz-series-3); }
+  #roboplanter-wiring-v1 .rp-key-line.rail33 { border-color: var(--viz-series-4); }
+  #roboplanter-wiring-v1 .rp-key-line.ground { border-color: var(--muted-foreground); border-top-width: 1px; }
+  #roboplanter-wiring-v1 .rp-detail dl { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 6px 12px; margin: 10px 0 0; }
+  #roboplanter-wiring-v1 .rp-detail dt { color: var(--muted-foreground); }
+  #roboplanter-wiring-v1 .rp-detail dd { margin: 0; overflow-wrap: anywhere; }
+  #roboplanter-wiring-v1 .rp-detail-name { font-weight: 500; }
+  #roboplanter-wiring-v1 .rp-status { margin-top: 10px; }
+  @media (max-width: 420px) {
+    #roboplanter-wiring-v1 .rp-layout { grid-template-columns: minmax(0,1fr) 34px minmax(0,1fr); margin-inline: 14px; row-gap: 22px; }
+    #roboplanter-wiring-v1 .rp-detail dl { grid-template-columns: 1fr; gap: 3px; }
+    #roboplanter-wiring-v1 .rp-detail dd { margin-bottom: 5px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #roboplanter-wiring-v1 .rp-wire { transition: none; }
+  }
+</style>
+<script>
+(() => {
+  const root = document.getElementById('roboplanter-wiring-v1');
+  if (!root) return;
+  const $ = q => root.querySelector(q);
+  const NS = 'http://www.w3.org/2000/svg';
+  const host = $('[data-diagram]');
+  const layout = $('[data-nodes]');
+  const svg = $('.rp-wires');
+  const paths = $('[data-paths]');
+  const dots = $('[data-dots]');
+  const wifi = $('#rp-wifi-mode');
+  const detail = $('[data-detail]');
+  const status = $('[data-status]');
+  let frame = 0;
+  let resizeFrame = 0;
+
+  // All component labels, pin assignments and qualification states live here.
+  const components = {
+    board: {
+      label: 'XIAO + Robot Board', caption: 'ESP32-S3 Plus · ZIP 原装', state: '板型已确认 · 引脚为候选',
+      rows: [['控制器', 'XIAO ESP32-S3 Plus + Robot Board'], ['输入', 'Robot Board 指定 USB-C：5V；逻辑：3.3V'], ['保留条件', '按实物版本复核；未确认的供电脚不作为施工依据']]
+    },
+    soil: {
+      label: '土壤传感器', caption: 'D0 / GPIO1 · 模拟候选', state: 'SKU 待确认',
+      rows: [['信号', 'AO → D0 / GPIO1（Servo3 信号脚）'], ['供电', '从 IIC 的 3.3V / GND 单独引出；不用 Servo 供电脚'], ['条件', '确认模块输出适配 ADC；干湿标定；是否测土温待核实']]
+    },
+    climate: {
+      label: '温湿度传感器', caption: 'SHT31 分支 · 默认禁用', state: '型号未确认',
+      rows: [['SHT31 候选', 'SDA → D4 / GPIO5；SCL → D5 / GPIO6'], ['供电', 'IIC 3.3V / GND；与板载 IMU 共用总线'], ['条件', '先核对 SKU；DHT11 不按 I²C 接入']]
+    },
+    pump: {
+      label: '外驱 + 12V 水泵', caption: 'D8 / GPIO7 → 驱动 IN', state: '驱动与电流待选型',
+      rows: [['控制', 'D8 / GPIO7（Servo4 信号）→ 3.3V 兼容 MOSFET 驱动 IN'], ['功率', '12V 支路 → 泵；泵回路经外部驱动开关；公共 GND'], ['保护', '本地限时、上电关闭；按泵结构配续流保护；不接 M1 输出']]
+    },
+    rgb: {
+      label: 'Grove RGB 灯带', caption: 'D13 / GPIO40 → DIN', state: '型号 / 数量 / 电压待确认',
+      rows: [['信号', 'Grove RGB：D13 / GPIO40 → DIN'], ['供电', '仅确认为 5V 型号后接 5V 支路；按电流预算供电'], ['条件', '核对协议与输入门限；按需要加电平匹配']]
+    },
+    air: {
+      label: '空气质量 v1.3', caption: 'D9 / GPIO8 · 独立 ADC', state: '需释放 Servo2',
+      rows: [['信号', 'AO → D9 / GPIO8（Servo2 信号，须拔舵机）'], ['供电', 'IIC 的 3.3V / GND 分支；信号单独转接'], ['用途', '气体变化趋势；不作为 CO₂ ppm / PM2.5 测量']]
+    },
+    uv: {
+      label: 'UV v1.1', caption: 'D10 / GPIO9 · 默认禁用', state: '候选口待电气核实',
+      rows: [['信号', 'AO → D10 / GPIO9（M2 ENC B）；须拔 M2 编码器'], ['供电', 'IIC 的 3.3V / GND 分支；不能直插 I²C Grove'], ['阻碍', '板载 4.7kΩ 上拉 + 22Ω 串阻可能影响模拟读数；未确认禁用']]
+    },
+    level: {
+      label: 'TTL 电平匹配', caption: 'D6 TX / D7 RX · 待核实', state: '按打印机 TTL 实测选型',
+      rows: [['发送', 'D6 / GPIO43 TX → 匹配电路 → 打印机 RX'], ['可选接收', '打印机 TX → 匹配电路 → D7 / GPIO44 RX'], ['条件', '先释放 VOFA UART0；12V 电源不等于 12V TTL']]
+    },
+    printer: {
+      label: '12V 热敏打印机', caption: '独立电源 · TTL 通信', state: '型号 / TTL / 协议待确认',
+      rows: [['电源', '独立 12V 支路；与控制器共地'], ['通信', 'TTL 经电平匹配；本方案不使用 USB 打印'], ['待核实', '峰值电流、波特率、字符编码与字库']]
+    },
+    phone: {
+      label: '荣耀手机 / YOYO', caption: 'BLE ↔ XIAO · 需联调', state: '业务回包待真机验证',
+      rows: [['无线', 'BLE 请求 / 响应；无物理接线'], ['NFC', '手机读取无源标签；贴纸本身不测量、不执行浇水'], ['入口', '直接唤起指定 YOYO Skill 未验证']]
+    },
+    indicator: {
+      label: 'SenseCAP Indicator', caption: '480×480 · 独立双 MCU', state: '子型号待确认 · Wi-Fi 需联调',
+      rows: [['供电', '5V → Indicator USB-C'], ['外部通信', '与 XIAO 通过 Wi-Fi 交换状态 / 操作请求；不接 UART'], ['内部', 'ESP32-S3 + RP2040；内部串口不占用 XIAO 串口']]
+    },
+    nfc: {
+      label: '无源 NFC 贴', caption: '只连手机 · 不占 GPIO', state: '标签 / NDEF 内容待定',
+      rows: [['连接', '无需电源线、信号线；由手机读取'], ['内容', '植物标识 / HTTPS 入口；不放控制凭据'], ['验证', '目标荣耀手机读取；YOYO 指定 Skill 直达待验证']]
+    },
+    router: {
+      label: '同一路由器', caption: '双方 STA · 备选', state: '备选拓扑 · 非已实现保证',
+      rows: [['拓扑', 'XIAO 与 Indicator 加入同一 2.4GHz 网络'], ['通信', '局域网 HTTP 候选；需地址发现与断线恢复'], ['条件', '联网配置与接口需两端固件配合']]
+    },
+    source: {
+      label: '12V 主电源', caption: '容量按负载实测核算', state: '电流容量未确认',
+      rows: [['12V 支路', '打印机；水泵 + 外部功率驱动'], ['降压支路', '12V → 稳压 5V 降压模块'], ['边界', '12V 不进入 Grove、USB、XIAO 或 Indicator']]
+    },
+    buck: {
+      label: '12V → 5V 降压', caption: '稳定 5V · 容量待核算', state: '模块待选型',
+      rows: [['输入', '12V 主电源'], ['输出', 'Robot Board 指定 USB-C；Indicator USB-C'], ['可选负载', '仅经确认的 5V 灯带；不能凭线色判断电压']]
+    },
+    logic: {
+      label: 'IIC 3.3V / GND', caption: '传感器电源分支', state: '信号与电源分开转接',
+      rows: [['引出', 'Robot Board IIC 口的 3.3V / GND；接线前核对针序'], ['供电', '土壤、空气质量、UV；SHT31 按确认后的型号'], ['限制', '模拟 AO 各进独立 ADC；不把多路 AO 并到 Grove Hub']]
+    },
+    sensors: {
+      label: '传感器电源', caption: '3.3V · 各路独立信号', state: '按实际 SKU 逐一启用',
+      rows: [['模拟支路', '土壤 → GPIO1；空气 → GPIO8；UV → GPIO9（待核实）'], ['可选 I²C', 'SHT31 → GPIO5 SDA / GPIO6 SCL'], ['电平', 'AO 与 GPIO 输入须符合 3.3V 逻辑；不使用 Servo 5V 供电']]
+    },
+    ground: {
+      label: '公共 GND', caption: '电源负极 / 控制器 / 外设', state: '功率回流与信号参考',
+      rows: [['连接', '12V−、降压 GND、Robot Board GND、Indicator GND、驱动、打印机、传感器'], ['回流', '泵 / 打印机大电流走各自回路；不经 Grove 信号地串接'], ['核实', '电源、连接器与线径按实际峰值负载确认']]
+    }
+  };
+  const signalPositions = [
+    ['board',0,2], ['soil',1,1], ['climate',1,3], ['pump',2,1], ['rgb',2,3],
+    ['air',3,1], ['uv',3,3], ['level',4,1], ['printer',4,3],
+    ['phone',5,1], ['indicator',5,3], ['nfc',6,1], ['router',6,3]
+  ];
+  const powerPositions = [
+    ['source',0,2], ['pump',1,1], ['printer',1,3], ['buck',2,2],
+    ['board',3,1], ['indicator',3,3], ['logic',4,2],
+    ['sensors',5,1], ['rgb',5,3], ['ground',6,2]
+  ];
+  const state = { view: 'signal', network: 'ap', selected: 'board' };
+  let edges = [];
+  let nodeElements = new Map();
+  const validView = x => x === 'signal' || x === 'power';
+  function applySaved(saved) {
+    const s = saved && (saved.privateContent || saved.modelContent || saved);
+    if (!s || typeof s !== 'object') return;
+    if (validView(s.view)) state.view = s.view;
+    if (s.network === 'ap' || s.network === 'router') state.network = s.network;
+    if (typeof s.selected === 'string' && components[s.selected]) state.selected = s.selected;
+  }
+  function save() {
+    if (!window.openai || typeof window.openai.setWidgetState !== 'function') return;
+    const snapshot = { view: state.view, network: state.network, selected: state.selected };
+    const promise = window.openai.setWidgetState({ modelContent: { ...snapshot, component: components[state.selected].label }, privateContent: snapshot });
+    if (promise && typeof promise.catch === 'function') promise.catch(() => {});
+  }
+  function makeSvg(name, attrs) {
+    const el = document.createElementNS(NS, name);
+    Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k, String(v)));
+    return el;
+  }
+  function setDetail() {
+    const c = components[state.selected];
+    detail.replaceChildren();
+    const heading = document.createElement('div');
+    heading.className = 'viz-row';
+    const name = document.createElement('span');
+    name.className = 'rp-detail-name'; name.textContent = c.label;
+    const badge = document.createElement('span');
+    badge.className = 'text-small'; badge.textContent = c.state;
+    heading.append(name, badge);
+    const dl = document.createElement('dl');
+    dl.className = 'text-small';
+    c.rows.forEach(([key,value]) => {
+      const dt = document.createElement('dt'); dt.textContent = key;
+      const dd = document.createElement('dd'); dd.textContent = value;
+      dl.append(dt,dd);
+    });
+    detail.append(heading,dl);
+    nodeElements.forEach((el,id) => el.querySelector('button').setAttribute('aria-pressed', String(id === state.selected)));
+  }
+  function edgeList() {
+    if (state.view === 'power') {
+      return [
+        {a:'source',b:'pump',rail:'12'}, {a:'source',b:'printer',rail:'12'},
+        {a:'source',b:'buck',rail:'12'}, {a:'buck',b:'board',rail:'5'},
+        {a:'buck',b:'indicator',rail:'5'}, {a:'board',b:'logic',rail:'3.3'},
+        {a:'logic',b:'sensors',rail:'3.3'}, {a:'buck',b:'rgb',rail:'5',kind:'conditional',route:'outer-right'},
+        ...['source','pump','printer','buck','board','indicator','logic','sensors','rgb'].map(a=>({a,b:'ground',kind:'ground',route:'ground'}))
+      ];
+    }
+    const list = [
+      {a:'soil',b:'board',kind:'conditional'}, {a:'board',b:'climate',kind:'conditional'},
+      {a:'board',b:'pump'}, {a:'board',b:'rgb'}, {a:'air',b:'board',kind:'conditional'},
+      {a:'uv',b:'board',kind:'conditional'}, {a:'board',b:'level'}, {a:'level',b:'printer',route:'adjacent'},
+      {a:'phone',b:'board',kind:'wireless'}, {a:'nfc',b:'phone',kind:'wireless',route:'outer-left'}
+    ];
+    if (state.network === 'ap') list.push({a:'board',b:'indicator',kind:'wireless'});
+    else list.push({a:'board',b:'router',kind:'wireless'}, {a:'router',b:'indicator',kind:'wireless',route:'outer-right'});
+    return list;
+  }
+  function getBox(id) {
+    const origin = host.getBoundingClientRect();
+    const r = nodeElements.get(id).querySelector('button').getBoundingClientRect();
+    return {l:r.left-origin.left,r:r.right-origin.left,t:r.top-origin.top,b:r.bottom-origin.top,cx:(r.left+r.right)/2-origin.left,cy:(r.top+r.bottom)/2-origin.top};
+  }
+  function pathFor(e,w) {
+    const a = getBox(e.a), b = getBox(e.b), mid = w/2;
+    if (e.route === 'ground') {
+      const left = a.cx <= mid;
+      const gutter = left ? 5 : w-5;
+      const start = left ? a.l : a.r;
+      return `M ${start} ${a.cy} H ${gutter} V ${b.cy} H ${left ? b.l : b.r}`;
+    }
+    if (e.route === 'outer-right' || e.route === 'outer-left') {
+      const right = e.route === 'outer-right';
+      const gutter = right ? w-9 : 9;
+      return `M ${right?a.r:a.l} ${a.cy} H ${gutter} V ${b.cy} H ${right?b.r:b.l}`;
+    }
+    if (e.route === 'adjacent') return `M ${a.r} ${a.cy} H ${b.l}`;
+    if (state.view === 'signal') {
+      const board = getBox('board');
+      const leaf = e.a === 'board' ? b : a;
+      const end = leaf.cx < mid ? leaf.r : leaf.l;
+      const d = `M ${board.cx} ${board.b} V ${leaf.cy} H ${end}`;
+      return e.a === 'board' ? d : `M ${end} ${leaf.cy} H ${board.cx} V ${board.b}`;
+    }
+    const centerA = Math.abs(a.cx-mid) < 3;
+    const centerB = Math.abs(b.cx-mid) < 3;
+    if (centerA && centerB) return `M ${a.cx} ${a.b} V ${b.t}`;
+    if (centerA) return `M ${a.cx} ${a.b} V ${b.cy} H ${b.cx < mid ? b.r : b.l}`;
+    if (centerB) return `M ${a.cx < mid ? a.r : a.l} ${a.cy} H ${b.cx} V ${b.t}`;
+    return `M ${a.cx} ${a.b} V ${(a.b+b.t)/2} H ${b.cx} V ${b.t}`;
+  }
+  function relevant(e) {
+    if (e.a === state.selected || e.b === state.selected) return true;
+    if (state.selected === 'printer' && e.b === 'level') return true;
+    if (state.selected === 'indicator' && state.network === 'router' && e.b === 'router') return true;
+    return false;
+  }
+  function drawWires() {
+    cancelAnimationFrame(frame); dots.replaceChildren();
+    const w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return;
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    paths.replaceChildren(); edges = edgeList();
+    edges.sort((a,b) => Number(relevant(a))-Number(relevant(b)));
+    edges.forEach((e,i) => {
+      const p = makeSvg('path',{d:pathFor(e,w),'class':'rp-wire '+(relevant(e)?'is-active':'is-dim'),'data-edge':i});
+      if (e.kind) p.setAttribute('data-kind',e.kind);
+      if (e.rail) p.setAttribute('data-rail',e.rail);
+      const title = makeSvg('title',{}); title.textContent = components[e.a].label+' → '+components[e.b].label;
+      p.append(title); paths.append(p); e.path = p;
+    });
+  }
+  function render() {
+    cancelAnimationFrame(frame); dots.replaceChildren();
+    root.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed',String(b.dataset.view === state.view)));
+    $('[data-network-controls]').hidden = state.view !== 'signal';
+    wifi.value = state.network;
+    layout.replaceChildren(); nodeElements = new Map();
+    const positions = state.view === 'signal' ? signalPositions : powerPositions;
+    positions.forEach(([id,row,col]) => {
+      if (id === 'router' && state.network === 'ap') return;
+      const c = components[id];
+      const slot = document.createElement('div'); slot.className = 'rp-node'+(col===2?' rp-node-center':'');
+      slot.style.gridRow = String(row+1); if(col!==2) slot.style.gridColumn = String(col);
+      const btn = document.createElement('button'); btn.type='button'; btn.className='btn btn-block viz-tile';
+      btn.textContent=c.label; btn.setAttribute('aria-pressed','false'); btn.setAttribute('aria-label',c.label+'，'+c.state+'，查看接线');
+      btn.addEventListener('click',()=>{state.selected=id;setDetail();drawWires();save();});
+      const caption = document.createElement('div'); caption.className='rp-caption text-small';
+      let text = c.caption;
+      if(state.view==='power' && id==='board') text='指定 USB-C · 5V';
+      if(state.view==='power' && id==='indicator') text='USB-C · 5V';
+      if(state.view==='power' && id==='pump') text='独立 12V · 功率回路';
+      if(state.view==='power' && id==='rgb') text='仅限已确认的 5V 型号';
+      if(state.view==='signal' && id==='indicator') text = state.network==='ap' ? '加入 XIAO SoftAP · 待联调' : '同一路由器 · STA 备选';
+      caption.textContent=text; slot.append(btn,caption); layout.append(slot); nodeElements.set(id,slot);
+    });
+    if(!nodeElements.has(state.selected)) state.selected=state.view==='signal'?'board':'source';
+    const legend=$('[data-legend]'); legend.replaceChildren();
+    const keys=state.view==='signal' ? [['','信号'],['wireless','无线'],['conditional','条件未确认']] : [['rail12','12V'],['rail5','5V'],['rail33','3.3V'],['ground','GND'],['conditional','条件支路']];
+    keys.forEach(([kind,text])=>{ const key=document.createElement('span');key.className='rp-key';const sw=document.createElement('span');sw.className='rp-key-line '+kind;sw.setAttribute('aria-hidden','true');key.append(sw,document.createTextNode(text));legend.append(key);});
+    setDetail(); drawWires();
+    status.textContent=state.view==='signal' ? '候选信号分配 · 条件未确认的模块默认禁用' : '独立 12V 支路 · 12V 不进入 Grove / USB · 公共 GND';
+  }
+  root.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{state.view=b.dataset.view;render();save();}));
+  wifi.addEventListener('change',()=>{state.network=wifi.value;render();save();});
+  $('[data-flow]').addEventListener('click',()=>{
+    cancelAnimationFrame(frame);dots.replaceChildren();
+    const current=edges.filter(e=>relevant(e)&&e.kind!=='ground');
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){status.textContent='所选连接已高亮 · 已遵循减弱动态设置';return;}
+    if(!current.length){status.textContent='公共地线已高亮';return;}
+    const animated=current.map(e=>{const dot=makeSvg('circle',{r:3.5,'class':'rp-flow-dot'});dots.append(dot);return {path:e.path,length:e.path.getTotalLength(),dot};});
+    let started;
+    function tick(time){
+      if(started===undefined)started=time;
+      const p=Math.min(1,(time-started)/1200);
+      animated.forEach(a=>{const point=a.path.getPointAtLength(a.length*p);a.dot.setAttribute('cx',point.x);a.dot.setAttribute('cy',point.y);});
+      if(p<1)frame=requestAnimationFrame(tick);else{dots.replaceChildren();status.textContent='流向示意结束 · 未向设备发送指令';}
+    }
+    status.textContent='连接流向示意 · 未向设备发送指令';frame=requestAnimationFrame(tick);
+  });
+  applySaved(window.openai && window.openai.widgetState);
+  render();
+  const observer=new ResizeObserver(()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(drawWires);});
+  observer.observe(host);
+  window.addEventListener('openai:set_globals',event=>{
+    const globals=event.detail&&event.detail.globals;
+    if(globals&&Object.prototype.hasOwnProperty.call(globals,'widgetState')){applySaved(globals.widgetState);render();}
+  });
+})();
+</script>
