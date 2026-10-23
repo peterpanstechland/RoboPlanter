@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 320 320" role="img" aria-labelledby="title desc">
+  <title id="title">RoboPlanter forest companion</title>
+  <desc id="desc">Original forest character reused from docs/previews/source/indicator-companion.html. Static square avatar with an opaque warm cream background.</desc>
+  <rect width="320" height="320" fill="#f4f1de"/>
+  <g transform="translate(-24 5) scale(1.15)">
+    <g fill="#5e8953" opacity=".22">
+      <path d="M66 110Q31 77 45 54Q73 68 66 110"/>
+      <path d="M252 116Q280 82 271 63Q247 78 252 116"/>
+    </g>
+    <path d="M160 78C131 43 123 20 91 25C82 56 114 85 160 78" fill="#5e8953"/>
+    <path d="M158 78C166 29 195 19 226 30C217 65 193 83 158 78" fill="#bbd38a"/>
+    <path d="M111 37Q133 57 159 78Q186 51 210 40" fill="none" stroke="#40583d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/>
+    <ellipse cx="160" cy="238" rx="77" ry="8" fill="#304538" opacity=".07"/>
+    <path d="M160 73C106 65 77 101 79 162C80 210 110 236 160 235C209 236 240 212 241 164C245 113 216 72 178 74Z" fill="#bbd38a" stroke="#40583d" stroke-width="2.5"/>
+    <path d="M84 183Q104 220 158 224Q207 224 234 188" fill="#5e8953" opacity=".14"/>
+    <g fill="#5e8953" opacity=".38">
+      <circle cx="102" cy="118" r="5"/>
+      <circle cx="216" cy="133" r="3"/>
+      <circle cx="189" cy="98" r="4"/>
+      <circle cx="109" cy="210" r="3"/>
+    </g>
+    <g fill="#dfa494" opacity=".65">
+      <ellipse cx="116" cy="171" rx="12" ry="6"/>
+      <ellipse cx="204" cy="171" rx="12" ry="6"/>
+    </g>
+    <g fill="#304538">
+      <ellipse cx="132" cy="151" rx="5.5" ry="9"/>
+      <ellipse cx="188" cy="151" rx="5.5" ry="9"/>
+    </g>
+    <path d="M149 173Q160 184 171 173" fill="none" stroke="#304538" stroke-width="3.4" stroke-linecap="round"/>
+    <path d="M91 189Q61 170 65 196M232 189Q255 172 253 196" fill="none" stroke="#40583d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M135 228L130 242M185 228L190 242" fill="none" stroke="#40583d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
+

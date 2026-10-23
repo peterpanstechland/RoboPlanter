@@ -18,7 +18,10 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import Field, StrictBool, StrictInt
 
-from bridge import Config, PlanterBridge
+if __package__:
+    from .bridge import Config, PlanterBridge
+else:  # Preserve direct `python integrations/mcp/server.py` usage.
+    from bridge import Config, PlanterBridge
 
 RequestId = Annotated[str, Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$",
     description="Required unique action ID. Keep the same ID when querying; never invent a new ID to retry an unknown outcome.")]
@@ -26,8 +29,13 @@ Duration = Annotated[StrictInt, Field(ge=1, le=30000, description="Pump duration
 PrintText = Annotated[str, Field(min_length=1, max_length=160, description="Printable ASCII or newline only, at most 160 bytes; no printer control codes.")]
 
 
-def create_server(config: Config | None = None, *, port: int = 8765) -> FastMCP:
-    bridge = PlanterBridge(config or Config.from_env())
+def create_server(config: Config | None = None, *, port: int = 8765,
+                  bridge: Any | None = None,
+                  transport_security: TransportSecuritySettings | None = None) -> FastMCP:
+    if bridge is not None and config is not None:
+        raise ValueError("Pass either an injected bridge or a device config, not both")
+    if bridge is None:
+        bridge = PlanterBridge(config or Config.from_env())
     server = FastMCP(
         "RoboPlanter", host="127.0.0.1", port=port,
         instructions=("Use sensor tools read-only unless the user explicitly asks for a device action. "
@@ -35,7 +43,7 @@ def create_server(config: Config | None = None, *, port: int = 8765) -> FastMCP:
                       "Never repeat an unknown action; query its request ID. completed is software feedback only."),
         stateless_http=True, json_response=True, max_request_body_size=16384,
         log_level="WARNING",
-        transport_security=TransportSecuritySettings(
+        transport_security=transport_security or TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
             allowed_hosts=["127.0.0.1:*", "localhost:*"],
             allowed_origins=["http://127.0.0.1:*", "http://localhost:*"],
