@@ -3,6 +3,7 @@
 #include <limits>
 #include <string>
 #include "../../firmware/xiao/include/controller.h"
+#include "../../firmware/xiao/include/ble_session.h"
 
 namespace {
 int checks = 0;
@@ -170,11 +171,95 @@ void cacheCapacity() {
   CHECK(active.submit(stop("haltfull"), 1).ok);
   CHECK(!active.pumpOn());
 }
+
+void bleConnectionBoundary() {
+  robo::BleSession session;
+  CHECK(!session.ticketFor(7).valid());
+  CHECK(!session.matches({}));
+  CHECK(session.connect(7));
+  const auto oldJob = session.ticketFor(7);
+  CHECK(session.matches(oldJob));
+  CHECK(!session.mayReply(oldJob));  // A new peer must subscribe itself.
+  session.setNotifications(7, true);
+  CHECK(session.mayReply(oldJob));
+  CHECK(!session.connect(8));
+  CHECK(!session.ticketFor(8).valid());
+  session.setNotifications(8, false);
+  CHECK(session.mayReply(oldJob));
+  CHECK(!session.disconnect(8));  // Rejecting another peer cannot reset the owner.
+  CHECK(session.matches(oldJob));
+  CHECK(session.disconnect(7));
+  CHECK(!session.matches(oldJob));
+  CHECK(!session.mayReply(oldJob));
+
+  // ESP-IDF reuses connection IDs. A job already dequeued before disconnect
+  // must neither actuate nor return its response to the replacement peer.
+  CHECK(session.connect(7));
+  const auto newJob = session.ticketFor(7);
+  CHECK(newJob.connectionId == oldJob.connectionId);
+  CHECK(newJob.generation != oldJob.generation);
+  CHECK(!session.matches(oldJob));
+  session.setNotifications(7, true);
+  CHECK(!session.mayReply(oldJob));
+  CHECK(session.mayReply(newJob));
+  robo::Controller controller(enabled());
+  if (session.matches(oldJob)) controller.submit(water("stale", 1000), 0);
+  CHECK(!controller.pumpOn());
+  CHECK(controller.submit(water("current", 1000), 0).ok);
+  CHECK(session.disconnect(7));
+  controller.tick(1000);  // Accepted work still stops independently of BLE.
+  CHECK(!controller.pumpOn());
+  CHECK(!session.mayReply(newJob));
+}
+
+void blePreparedWriteBoundary() {
+  robo::BlePreparedWrite<32> buffer;
+  const robo::BleTicket owner{1, 7}, replacement{2, 7}, stranger{1, 8};
+  const std::string first = "S|test-token-12345|", last = "soil";
+  auto bytes = [](const std::string& text) { return reinterpret_cast<const uint8_t*>(text.data()); };
+  char output[33]{};
+  CHECK(buffer.append(owner, 0, bytes(first), first.size()));
+  CHECK(buffer.append(owner, first.size(), bytes(last), last.size()));
+  CHECK(buffer.finish(owner, output));
+  CHECK(std::string(output) == first + last);
+  CHECK(!buffer.finish(owner, output));  // Execute is consumed exactly once.
+
+  CHECK(buffer.append(owner, 0, bytes(first), first.size()));
+  CHECK(!buffer.append(stranger, first.size(), bytes(last), last.size()));
+  CHECK(!buffer.finish(owner, output));
+  CHECK(buffer.append(owner, 0, bytes(first), first.size()));
+  CHECK(!buffer.finish(replacement, output));
+  CHECK(buffer.append(owner, 0, bytes(first), first.size()));
+  buffer.reset();  // Disconnect or ATT cancel: no residual authenticated bytes.
+  CHECK(!buffer.finish(replacement, output));
+  CHECK(!buffer.append(replacement, first.size(), bytes(last), last.size()));
+  CHECK(!buffer.append(replacement, 0, bytes(last), last.size())); // Invalid until cancel/execute.
+  CHECK(!buffer.finish(replacement, output));
+  CHECK(buffer.append(replacement, 0, bytes(last), last.size()));
+  CHECK(buffer.finish(replacement, output));
+  CHECK(std::string(output) == last);
+
+  const std::string full(32, 'a'), tooLarge(33, 'a');
+  CHECK(buffer.append(owner, 0, bytes(full), full.size()));
+  CHECK(buffer.finish(owner, output));
+  CHECK(std::string(output) == full);
+  CHECK(!buffer.append(owner, 0, bytes(tooLarge), tooLarge.size()));
+  CHECK(!buffer.finish(owner, output));
+  CHECK(buffer.append(owner, 0, bytes(first), first.size()));
+  CHECK(!buffer.append(owner, 0, bytes(first), first.size())); // Duplicate/out-of-order fragment.
+  CHECK(!buffer.finish(owner, output));
+  const uint8_t embeddedNul[] = {'S', '\0', 'x'};
+  CHECK(buffer.append(owner, 0, embeddedNul, sizeof(embeddedNul)));
+  CHECK(!buffer.finish(owner, output));
+  CHECK(!buffer.append({}, 0, bytes(last), last.size()));
+  CHECK(!buffer.finish(owner, output));
+}
 }  // namespace
 
 int main() {
   deadlineAndReplay(); wrapAndStop(); validationAndOverflow();
   disabledAndInterlock(); printerAndCalibration(); cacheCapacity();
+  bleConnectionBoundary(); blePreparedWriteBoundary();
   std::cout << "PASS " << checks << " controller checks\n";
   return 0;
 }

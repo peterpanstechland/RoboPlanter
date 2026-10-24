@@ -1,25 +1,32 @@
-# RoboPlanter 独立 Skill 内容草稿
+# 独立荣耀 Skill：RoboPlanter 工位盆栽伙伴
 
-这是符合荣耀导入结构的内容草稿，**不是已连接硬件的 Skill**。它与上一级 `agent-prompt.md` 的用途不同：后者用于绑定 MCP 插件的 LLM 智能体；本目录用于“我的技能”的独立 Skill 草稿。
+这是参赛主线的 **0.2.0 联调草稿**，入口为“我的技能”，使用官方BLE工具的接入方案。上一级 `agent-prompt.md` 属于已有LLM+MCP辅助实验，不能代替此技能。
 
-## 包内容
+硬件门禁保持关闭：设备令牌安全注入、手机长写、通知回包和实物连接未验收。草稿可测试安装、唤起、工位陪伴和诚实的离线反馈，不能宣称完成硬件赛道作品。声明 `ble_send_command,skill_exit`，本版只允许退出工具；不添加自建MCP工具名或虚构密钥变量。
 
-- 源文件：`SKILL.md`，YAML 中包含 `name` 和 `description`。
-- 导入包：项目根目录下的 `build/honor/roboplanter-companion-draft.zip`，根目录仅包含 `SKILL.md`，无额外外层目录。该构建目录已被 Git 忽略。
-- 未填写 `allowed-tools`、metadata、APIKey 注入语法或任何设备令牌；这些不是为了导入内容草稿而编造的必填项。
+## 打包与平台配置
 
-## 保存为草稿
+执行 `python tools/package_honor_skill.py` 生成 `build/honor/roboplanter-companion-draft.zip`。只打包白名单中的三份文件：根目录 `SKILL.md` 及 `references/` 下两份说明，无外层文件夹，无凭据或服务器配置，无执行脚本。
 
-在荣耀“我的技能”中导入 ZIP，补齐当前表单要求的基本信息，例如执行环境、实际可选分类、版本（可用 `0.1.0`）和版本说明。无 `_meta.json` 时，slug 可由合法的 `name` 解析。以列表中出现相应草稿条目作为保存成功依据。
+| 字段 | 内容 |
+| --- | --- |
+| Slug / 技能名称 | `roboplanter-companion` |
+| 展示名称 | `RoboPlanter工位盆栽伙伴` |
+| 版本 / 环境 | `0.2.0` / Android |
+| 头像 | `../assets/roboplanter-160.png` |
+| 引导示例 | `上班有点累，盆栽伙伴陪我一下`；`盆栽现在怎么样？有哪些功能已经能用？` |
+| APIKey开关 | 本版不要求；本版不发硬件请求，固件鉴权未删除。 |
 
-本目录生成不包含平台上传、创建条目、安全检测、真机测试或发布。后续若保存平台草稿，应保留文中当前能力限制；发布和测试另按平台流程执行，不能把导入成功称为接入完成。
+平台实际结果见[部署记录](../../../docs/deployment/honor-platform-status.md)。保存草稿、安全检测、真机测试、发布审核和比赛提交是不同步骤。
 
-## 仍缺的依赖
+## 进入硬件联调
 
-1. 平台如何将自建 MCP 工具关联给独立 Skill 的官方方法或成功验证；仅填写六个工具名称不等于绑定。
-2. 到达真实 XIAO 的设备链路。云 MCP 已上线并通过荣耀控制台调用，但真实本地网关尚未接入，不能把云端可访问当作花盆已在线；端 MCP 的 SDK / 调用协议仍需核实。
-3. 六个真实工具的发现、参数、鉴权和结果回传，以及手机到设备的只读与动作验收。
+1. 获取实际广播名称，不沿用小车名称；不上传或在对话中填写设备令牌。
+2. 确认官方支持的鉴权传递方式。当前APIKey说明未定义BLE参数注入，开关本身不能解决。
+3. 外设禁用时，真机验证完整请求、WRITE确认、NOTIFY订阅及返回。服务器MTU设置不代替手机测试，不能自行拆成多条独立命令。
+4. 先只读，再逐项验收灯、ASCII打印，最后短时水泵；分别记录断连、重复ID、超时、不重放。
+5. 修改技能版本及硬件就绪状态后再测试，不由对话解除门禁。
 
-只有完成这些条件后，才修订 `SKILL.md`，使用实际绑定名称声明工具并启用设备流程。BLE 直连是另一条备选路线，仍需验证消息长度、业务回包和设备凭证处理；不能通过删除设备鉴权或猜测 APIKey 变量来绕过。
+BLE明文令牌与Arduino长写缓存的已知限制见[固件说明](../../../firmware/xiao/README.md)。
 
-依据：[荣耀技能创建和管理](https://developer.honor.com/cn/doc/guides/101775)、[官方 BLE 工具案例](https://developer.honor.com/cn/doc/guides/101781)、项目 `docs/honor-platform-modes.md` 与 `integrations/yoyo/README.md`。
+依据：[赛事要求](https://developer.honor.com/cn/activity/page/tg2026081119200701#navigation6)、[技能创建管理](https://developer.honor.com/cn/doc/guides/101775)、[官方BLE案例](https://developer.honor.com/cn/doc/guides/101781)。

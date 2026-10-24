@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "controller.h"
+#include "ble_session.h"
 #include "robo_config.h"
 
 namespace {
@@ -47,13 +48,17 @@ robo::Controller controller(controlConfig());
 SemaphoreHandle_t coreMutex;
 SemaphoreHandle_t sensorMutex;
 SemaphoreHandle_t lightMutex;
+SemaphoreHandle_t bleMutex;
 QueueHandle_t printQueue;
 QueueHandle_t bleQueue;
 WebServer http(80);
 HardwareSerial printerSerial(1);
 Adafruit_NeoPixel pixels(ROBO_LED_COUNT, pins::Rgb, NEO_GRB + NEO_KHZ800);
 BLECharacteristic* bleCharacteristic;
-volatile bool bleConnected = false;
+BLE2902* bleNotifications;
+esp_gatt_if_t bleGattsIf = ESP_GATT_IF_NONE;
+robo::BleSession bleSession;
+robo::BlePreparedWrite<MaxBleBytes> blePreparedWrite;
 String deviceId;
 
 struct Sample {
@@ -70,7 +75,7 @@ struct Sample {
 };
 Sample sample;
 struct PrintJob { char id[33]; char text[robo::MaxPrintBytes + 1]; };
-struct BleJob { char text[MaxBleBytes + 1]; };
+struct BleJob { robo::BleTicket ticket; char text[MaxBleBytes + 1]; };
 
 class Lock {
  public:
@@ -499,40 +504,106 @@ std::string handleBle(const std::string& text) {
   return bleResult(processCommand(command));
 }
 
-void bleReply(const std::string& response) {
-  if (!bleConnected) return;
+// All BLE helpers below run under bleMutex. Send only to the original conn_id:
+// Arduino's notify() broadcasts to every peer, including one being rejected.
+void bleReply(const robo::BleTicket& ticket, const std::string& response) {
+  if (!bleSession.mayReply(ticket) || bleGattsIf == ESP_GATT_IF_NONE) return;
   // No multipart notifications. Every response fits the default ATT MTU 23.
-  bleCharacteristic->setValue(response.size() <= 20 ? response : "E:SIZE");
-  bleCharacteristic->notify();
+  const std::string value = response.size() <= 20 ? response : "E:SIZE";
+  esp_ble_gatts_send_indicate(bleGattsIf, ticket.connectionId, bleCharacteristic->getHandle(),
+      value.size(), reinterpret_cast<uint8_t*>(const_cast<char*>(value.data())), false);
 }
 
-class BleCallbacks : public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic* characteristic) override {
-    const std::string value = characteristic->getValue();
-    if (value.empty() || value.size() > MaxBleBytes || value.find('\0') != std::string::npos) {
-      bleReply("E:SIZE"); return;
-    }
-    BleJob job{};
-    memcpy(job.text, value.data(), value.size());
-    if (xQueueSend(bleQueue, &job, 0) != pdTRUE) bleReply("E:BUSY");
+void queueBle(const robo::BleTicket& ticket, const uint8_t* data, size_t size) {
+  if (!bleSession.matches(ticket)) return;
+  if (!data || size == 0 || size > MaxBleBytes || std::memchr(data, '\0', size)) {
+    bleReply(ticket, "E:SIZE"); return;
   }
-};
+  BleJob job{};
+  job.ticket = ticket;
+  memcpy(job.text, data, size);
+  if (xQueueSend(bleQueue, &job, 0) != pdTRUE) bleReply(ticket, "E:BUSY");
+}
+
+// Public Arduino BLE hook, called after the library handles each GATTS event.
+// Read the actual peer/bytes from the event instead of the shared getValue().
+void bleGattEvent(esp_gatts_cb_event_t event, esp_gatt_if_t gattsIf, esp_ble_gatts_cb_param_t* param) {
+  Lock guard(bleMutex);
+  if (event == ESP_GATTS_REG_EVT && param->reg.status == ESP_GATT_OK) {
+    bleGattsIf = gattsIf;
+    return;
+  }
+  if (!bleCharacteristic) return;
+  if (event == ESP_GATTS_WRITE_EVT) {
+    const auto& write = param->write;
+    const robo::BleTicket ticket = bleSession.ticketFor(write.conn_id);
+    if (!ticket.valid()) return;
+    if (write.handle == bleNotifications->getHandle() && !write.is_prep && write.offset == 0 && write.len == 2) {
+      bleSession.setNotifications(write.conn_id, (write.value[0] & 1) != 0);
+    } else if (write.handle == bleCharacteristic->getHandle()) {
+      if (write.is_prep) {
+        if (!blePreparedWrite.append(ticket, write.offset, write.value, write.len))
+          bleReply(ticket, "E:FORMAT");
+      } else {
+        blePreparedWrite.reset();
+        if (write.offset != 0) bleReply(ticket, "E:FORMAT");
+        else queueBle(ticket, write.value, write.len);
+      }
+    }
+  } else if (event == ESP_GATTS_EXEC_WRITE_EVT) {
+    const robo::BleTicket ticket = bleSession.ticketFor(param->exec_write.conn_id);
+    if (!ticket.valid()) return;
+    if (param->exec_write.exec_write_flag == ESP_GATT_PREP_WRITE_CANCEL) {
+      blePreparedWrite.reset();
+    } else if (param->exec_write.exec_write_flag == ESP_GATT_PREP_WRITE_EXEC) {
+      char text[MaxBleBytes + 1]{};
+      if (blePreparedWrite.finish(ticket, text))
+        queueBle(ticket, reinterpret_cast<const uint8_t*>(text), strlen(text));
+      else bleReply(ticket, "E:FORMAT");
+    }
+  }
+}
 
 class ServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer*) override { bleConnected = true; }
-  void onDisconnect(BLEServer*) override {
-    bleConnected = false;
-    bleCharacteristic->setValue("RoboPlanter/1");
-    xQueueReset(bleQueue);
-    BLEDevice::startAdvertising();
+  void onConnect(BLEServer* server, esp_ble_gatts_cb_param_t* param) override {
+    bool accepted;
+    {
+      Lock guard(bleMutex);
+      accepted = bleSession.connect(param->connect.conn_id);
+      if (accepted) {
+        xQueueReset(bleQueue);
+        blePreparedWrite.reset();
+      }
+    }
+    if (accepted) BLEDevice::stopAdvertising();
+    else server->disconnect(param->connect.conn_id);
+  }
+  void onDisconnect(BLEServer*, esp_ble_gatts_cb_param_t* param) override {
+    bool ownerLeft;
+    {
+      Lock guard(bleMutex);
+      ownerLeft = bleSession.disconnect(param->disconnect.conn_id);
+      if (ownerLeft) {
+        blePreparedWrite.reset();
+        bleCharacteristic->setValue("RoboPlanter/1");
+        xQueueReset(bleQueue);
+      }
+    }
+    if (ownerLeft) BLEDevice::startAdvertising();
   }
 };
 
 void bleTask(void*) {
   BleJob job;
   for (;;) {
-    if (xQueueReceive(bleQueue, &job, portMAX_DELAY) == pdTRUE)
-      bleReply(handleBle(job.text));
+    if (xQueueReceive(bleQueue, &job, portMAX_DELAY) == pdTRUE) {
+      Lock guard(bleMutex);
+      if (!bleSession.matches(job.ticket)) continue;
+      // Serialize the short command commit with disconnect. Already accepted
+      // pump/print work retains its local deadline/result; it is not replayed.
+      const std::string response = handleBle(job.text);
+      bleReply(job.ticket, response);
+    }
   }
 }
 
@@ -553,9 +624,10 @@ void setup() {
   coreMutex = xSemaphoreCreateMutex();
   sensorMutex = xSemaphoreCreateMutex();
   lightMutex = xSemaphoreCreateMutex();
+  bleMutex = xSemaphoreCreateMutex();
   printQueue = xQueueCreate(1, sizeof(PrintJob));
   bleQueue = xQueueCreate(4, sizeof(BleJob));
-  if (!coreMutex || !sensorMutex || !lightMutex || !printQueue || !bleQueue)
+  if (!coreMutex || !sensorMutex || !lightMutex || !bleMutex || !printQueue || !bleQueue)
     failClosed("Startup failed: task resources unavailable");
   if (xTaskCreate(pumpTask, "pump-deadline", 3072, nullptr, 10, nullptr) != pdPASS)
     failClosed("Startup failed: pump deadline task unavailable");
@@ -602,13 +674,17 @@ void setup() {
 
   BLEDevice::init(deviceId.c_str());
   BLEDevice::setMTU(247);
+  BLEDevice::setCustomGattsHandler(bleGattEvent);
   BLEServer* server = BLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());
   BLEService* service = server->createService(ServiceUuid);
   bleCharacteristic = service->createCharacteristic(CharacteristicUuid,
       BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY);
-  bleCharacteristic->addDescriptor(new BLE2902());
-  bleCharacteristic->setCallbacks(new BleCallbacks());
+  // Declaration properties alone are not ATT permissions. Never expose the
+  // library's last written value, which contains the caller's device token.
+  bleCharacteristic->setAccessPermissions(ESP_GATT_PERM_WRITE);
+  bleNotifications = new BLE2902();
+  bleCharacteristic->addDescriptor(bleNotifications);
   bleCharacteristic->setValue("RoboPlanter/1");
   service->start();
   BLEAdvertising* advertising = BLEDevice::getAdvertising();

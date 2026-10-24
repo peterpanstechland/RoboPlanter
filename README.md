@@ -1,6 +1,8 @@
 # RoboPlanter 智能盆栽
 
-基于用户提供的 **Seeed XIAO ESP32-S3 Plus + XIAO Robot Board** 套件，配合 **SenseCAP Indicator** 的智能盆栽。**YOYO 是主要的对话入口**：设计目标是理解用户的话，通过自有 MCP 查询和控制盆栽，再反馈真实结果。当前云 MCP 已上线，设备网关尚未接通，云端所有写操作（包括停泵）均未启用。XIAO 负责传感器与执行器；Indicator 负责同步显示、触摸和本地操作。两块板使用 Wi-Fi HTTP 通信，分别通过 USB/5V 供电，无需互接 UART/I²C。
+基于用户提供的 **Seeed XIAO ESP32-S3 Plus + XIAO Robot Board** 套件，配合 **SenseCAP Indicator** 的智能盆栽。**YOYO 独立 Skill 是主要的对话入口**：目标路径为 Skill → 官方 `ble_send_command` → XIAO BLE，再根据设备业务回包反馈真实结果。XIAO 负责传感器与执行器；Indicator 负责同步显示、触摸和本地操作，经 Wi-Fi HTTP 连接 XIAO。两块板分别通过 USB/5V 供电，无需互接 UART/I²C。
+
+独立 Skill 0.2.0已导入并保存荣耀平台草稿，尚未完成真机端到端验证。硬件令牌安全注入和手机工具长写未验证，当前 Skill 不发送硬件命令。已有 MCP/MQTT 保留为辅助接入，不是 Skill 主线的前置条件；A2A 不需要。
 
 这份实现面向压缩包内的 Plus 主控，不是 XIAO ESP32-S3 Sense。原始套件资料保留在本机 `reference/`，不随代码上传；[参考资料说明](reference/README.md) 记录恢复路径。新程序位于 `firmware/`。
 
@@ -8,9 +10,9 @@
 
 | 内容 | 入口 |
 | --- | --- |
-| YOYO 角色、工具调用与交互验收 | [integrations/yoyo/README.md](integrations/yoyo/README.md) |
-| 自有 MCP 桥接服务与本机测试 | [integrations/mcp/README.md](integrations/mcp/README.md) |
-| 已上线云 MCP、MQTT 与本地网关 | [integrations/cloud/README.md](integrations/cloud/README.md) |
+| YOYO 独立 Skill、BLE 条件与交互验收 | [integrations/yoyo/README.md](integrations/yoyo/README.md) |
+| 辅助 MCP 桥接服务与本机测试 | [integrations/mcp/README.md](integrations/mcp/README.md) |
+| 辅助云 MCP、MQTT 与本地网关 | [integrations/cloud/README.md](integrations/cloud/README.md) |
 | 云部署、鉴权与真实 broker 验证记录 | [integrations/cloud/INFRA-DEPLOYMENT.md](integrations/cloud/INFRA-DEPLOYMENT.md) |
 | XIAO 固件、传感器与驱动开关 | [firmware/xiao/README.md](firmware/xiao/README.md) |
 | Indicator 屏幕、触摸与网络客户端 | [firmware/indicator/README.md](firmware/indicator/README.md) |
@@ -30,11 +32,13 @@
 - 标准库 Python 联调工具 `tools/device_cli.py`，以及控制核心和 HTTP 客户端测试。
 - 基于官方 Python SDK 的六个 MCP 工具：读取状态、限时浇水、停泵、灯光开关、打印、查询动作结果。本机版固定设备地址、保管设备令牌，动作不自动重发；默认 stdio，HTTP 仅监听本机回环地址。
 - 云 MCP 已部署至 `https://emqx.robomon.cn/roboplanter/mcp`，同时提供 SSE，使用 HTTPS + Bearer 鉴权。EMQX 的云端和网关两个独立账号已完成 **24 项实际 broker 权限检查**。云服务只转发状态与结果查询；四个动作工具（包括停泵）均返回 `rejected / cloud_writes_not_enabled / sent=false`。
-- YOYO 的智能体提示词和 13 条人工交互验收场景：查状态、明确请求后浇水、开关灯、打印鼓励小票，以及离线和结果未知时的反馈。这些场景尚需在 YOYO 上人工验收。
+- YOYO独立Skill 0.2.0已保存平台草稿，包含工位陪伴流程、BLE协议和验收说明，另有白名单打包工具；辅助MCP智能体提示词及13条人工验收场景保留。草稿上传不代表BLE已接通或硬件动作已验收。
 
 所有传感器与执行器默认禁用。水泵和打印另需确认驱动/电平，本地执行动作还需启用动作开关并更换默认令牌。首版没有自动浇水策略或相机。照片需本地导入后重新构建；番茄钟由屏幕本地运行，尚无 YOYO 控制接口。
 
-当前网络方案为云 MCP → MQTT → 本地双网络网关 → XIAO HTTP；网关需要同时连接 XIAO 热点和互联网。**真实设备网关尚未接通**，云端状态查询应返回不可用，不能据云服务健康或工具发现成功认定花盆在线。云端写操作需要后续设备截止时间协议与真机验证，不能通过启用本地动作开关开放。荣耀平台的 LLM 智能体草稿已创建；MCP 六工具已导入、两个只读工具的平台调用通过，插件已提交团队内部发布，处于审核中，待通过后绑定智能体。见[平台记录](docs/deployment/honor-platform-status.md)。独立 Skill 只有[本地内容草稿](integrations/yoyo/skill-draft/README.md)。A2A 尚未实现，当前主路线不需要 A2A。
+主线计划由[独立 Skill](integrations/yoyo/skill-draft/README.md)经官方 BLE 工具直接连接附近的 XIAO，不经过云 MCP 或 Indicator。辅助网络方案为云 MCP → MQTT → 本地双网络网关 → XIAO HTTP；该网关需要同时连接 XIAO 热点和互联网。**真实设备网关尚未接通**，云端状态查询应返回不可用，不能据云服务健康或工具发现成功认定花盆在线。云端写操作（包括停泵）均禁用，需要后续设备截止时间协议与真机验证，不能通过启用本地动作开关开放。
+
+辅助平台的实际进展保留：LLM 智能体草稿已创建；MCP 六工具已导入、两个只读工具的平台调用通过，插件已提交团队内部发布，提交后处于审核中，尚未绑定智能体。这些结果不等于独立 Skill 已获得 MCP 工具调用能力。独立 Skill 本轮已另建草稿；最新进展见[平台记录](docs/deployment/honor-platform-status.md)。
 
 ## 配置与构建
 
@@ -64,13 +68,13 @@ Copy-Item firmware/indicator/include/local_config.example.h firmware/indicator/i
 
 ## 本机验证
 
-2026-10-24：两份固件均编译成功；控制核心 **212 项检查通过**，Indicator UI 模型 **99 项检查通过**；Python 测试合计 **35 项通过**（HTTP 客户端 8 项、MCP 桥接 21 项、图片打包 6 项）。MCP 测试使用官方 SDK 完成 stdio 握手、发现六个工具，并逐个调用模拟设备；不连接真实硬件或荣耀账号。Indicator 空相册与包含一张测试照片的配置均已编译，最终产物为空相册。
+2026-10-24：两份固件均编译成功；控制核心 **267 项检查通过**，Indicator UI 模型 **99 项检查通过**；Python 测试合计 **35 项通过**（HTTP 客户端 8 项、MCP 桥接 21 项、图片打包 6 项）。MCP 测试使用官方 SDK 完成 stdio 握手、发现六个工具，并逐个调用模拟设备；不连接真实硬件或荣耀账号。Indicator 空相册与包含一张测试照片的配置均已编译，最终产物为空相册。
 
 本轮另新增并通过 **云入口 14 项测试 + MQTT 15 项测试**，覆盖鉴权、两种 MCP 传输、会话隔离、过期/retained 消息拒绝、新鲜度和云端禁写。公网服务及真实 broker 的验证另见[部署记录](integrations/cloud/INFRA-DEPLOYMENT.md)，不计作真机验收。
 
 | 默认配置构建 | 静态 RAM | 程序 Flash / 分区容量 |
 | --- | --- | --- |
-| XIAO Robot Board | 77,884 B / 327,680 B（23.8%） | 1,361,121 B / 6,291,456 B（21.6%） |
+| XIAO Robot Board | 78,172 B / 327,680 B（23.9%） | 1,361,145 B / 6,291,456 B（21.6%） |
 | SenseCAP Indicator | 46,064 B / 327,680 B（14.1%） | 860,833 B / 3,342,336 B（25.8%） |
 
 以上为编译器报告，不包含运行中的动态堆、网络缓冲或屏幕帧缓冲峰值。构建日志保存于本机 `tmp/xiao-build.log` 与 `tmp/indicator-ui-build.log`。默认 XIAO 构建也会解析所有可选驱动源码，但不代表外设已经通过实物验收。

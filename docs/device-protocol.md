@@ -2,15 +2,15 @@
 
 ## 两板连接
 
-首版由 XIAO 建立 2.4 GHz Wi-Fi 热点，SenseCAP Indicator 连接该热点。XIAO 默认地址为 `192.168.4.1`；两块板分别供电，不连接 TX/RX、I²C 或 USB 数据线。手机可以使用 XIAO 的 BLE 接口；Indicator 使用 HTTP。两种入口最终调用同一个本地设备控制逻辑。
+首版由 XIAO 建立 2.4 GHz Wi-Fi 热点，SenseCAP Indicator 连接该热点。XIAO 默认地址为 `192.168.4.1`；两块板分别供电，不连接 TX/RX、I²C 或 USB 数据线。YOYO 独立 Skill 的目标路径是手机官方 BLE 工具直连 XIAO；Indicator 使用 HTTP。两种入口最终调用同一个本地设备控制逻辑。
 
 默认热点密码 `planter-demo` 和设备令牌 `change-me-before-use` 仅用于初始只读联调。启用执行器前须在两端本地配置中设置同一个非默认设备令牌。项目不保存真实 Wi-Fi 密码和令牌到 Git。
 
 ## YOYO 调用入口
 
-主交互由 YOYO 的 LLM 智能体调用 [本地 MCP 桥接](../integrations/mcp/README.md)，桥接将结构化工具请求映射到下述 HTTP 协议。模型不直接拼设备令牌；服务端从环境读取固定设备地址与令牌。`get_planter_state`、`water`、`stop_water`、`set_light`、`print_note`、`get_action_result` 分别对应状态、命令及结果接口。
+主交互路径为 **YOYO 独立 Skill → 官方 `ble_send_command` → XIAO BLE**；Skill 草稿位于 [integrations/yoyo/skill-draft](../integrations/yoyo/skill-draft/README.md)，0.2.0已导入并保存平台草稿。设备令牌的安全注入方式及手机工具的长写能力未验证，当前 Skill 不发送硬件命令。不能将令牌写入 Skill 正文或假定平台会替换未经文档确认的变量。
 
-自然语言意图与结果表达见 [YOYO 提示词](../integrations/yoyo/agent-prompt.md)。本地 MCP 进程和荣耀平台部署是两步：平台需有受控的可达服务和设备通道，不能直接访问 XIAO 热点私网地址。
+Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/mcp/README.md) 和 [云 MCP/MQTT 网关](../integrations/cloud/README.md) 保留为辅助接入，均不是独立 Skill 主线的前置条件；A2A 不需要。MCP 的六个工具将请求映射到同一 HTTP 接口，服务端从环境读取固定地址与令牌。荣耀云不能直接访问 XIAO 热点地址；目前云网关未接通，云端所有写操作（包括停泵）均禁用。详情见 [YOYO 接入说明](../integrations/yoyo/README.md)。
 
 ## HTTP
 
@@ -68,4 +68,6 @@ python tools/device_cli.py print 'Hello planter'
 
 ## BLE
 
-保留附件的服务 UUID `a2f39c10-7e4b-4d21-8a61-0f3bc9d15001`，特征 UUID `a2f39c11-7e4b-4d21-8a61-0f3bc9d15001`。具体短文本格式、长度和回包规则见 XIAO 固件说明。BLE 写确认与设备业务回包分开处理；YOYO 查询需启用等待响应。
+保留附件的服务 UUID `a2f39c10-7e4b-4d21-8a61-0f3bc9d15001`，特征 UUID `a2f39c11-7e4b-4d21-8a61-0f3bc9d15001`。具体短文本格式、长度和回包规则见 [XIAO 固件说明](../firmware/xiao/README.md#ble-protocol-version-1)。BLE 写确认与设备业务回包分开处理；YOYO 查询需启用等待响应。
+
+带最短 16 字符令牌的 UV 查询已为 21 字节，超过默认 ATT MTU 23 下的 20 字节载荷。固件的长写处理与连接归属校验已编译和通过核心测试；荣耀工具是否协商足够 MTU、支持完整长写并返回完整业务响应，仍须手机真机验证。查询成功也不构成浇水授权。独立 Skill 当前只准备草稿，不因固件编译通过而启用硬件调用。
