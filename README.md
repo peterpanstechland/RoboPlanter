@@ -70,7 +70,7 @@ Copy-Item firmware/indicator/include/local_config.example.h firmware/indicator/i
 - `firmware/xiao/.pio/build/xiao_robot_board/firmware.bin`
 - `firmware/indicator/.pio/build/sensecap_indicator/firmware.bin`
 
-构建脚本不会烧录。Indicator 已于 2026-10-24 经 ESP32 的 CH340 接口完成首次刷写，刷前保存并校验了本地 8 MB 备份。用户反馈首版频闪，随后确认旧界面的 Canvas 修复版“频闪消失，触摸正常”。Worker 像素第一版已构建并上传校验成功；见[第一版记录](docs/deployment/indicator-worker-ui.md)。中英文、Wi-Fi 和亮度设置 v2 也已刷写，用户随后确认三项正常，详见[设置版本记录](docs/deployment/indicator-settings-ui.md)。养成 v3 在第一轮刷新中断修订后仍收到偶发闪屏反馈；当前已刷入 VSYNC 双缓冲版本，完成 96 次帧交换与存档读回，实屏效果仍待用户确认，见[双缓冲修订记录](docs/deployment/indicator-vsync-double-buffer.md)、[养成历史记录](docs/deployment/indicator-garden-ui.md)和[玩法说明](docs/indicator-garden.md)。RP2040 原固件未操作，XIAO 尚未刷写；备份与恢复方法见[首次刷写记录](docs/deployment/indicator-first-flash.md)。
+构建脚本不会烧录。Indicator 已于 2026-10-24 经 ESP32 的 CH340 接口完成首次刷写，刷前保存并校验了本地 8 MB 备份。用户反馈首版频闪，随后确认旧界面的 Canvas 修复版“频闪消失，触摸正常”。Worker 像素第一版已构建并上传校验成功；见[第一版记录](docs/deployment/indicator-worker-ui.md)。中英文、Wi-Fi 和亮度设置 v2 也已刷写，用户随后确认三项正常，详见[设置版本记录](docs/deployment/indicator-settings-ui.md)。养成 v3 在第一轮刷新中断修订后仍收到偶发闪屏反馈；当前已刷入 VSYNC 双缓冲版本，完成 96 次帧交换与存档读回，用户随后确认“暂时没有再闪，触摸正常”，见[双缓冲修订记录](docs/deployment/indicator-vsync-double-buffer.md)、[养成历史记录](docs/deployment/indicator-garden-ui.md)和[玩法说明](docs/indicator-garden.md)。RP2040 原固件未操作，XIAO 尚未刷写；备份与恢复方法见[首次刷写记录](docs/deployment/indicator-first-flash.md)。
 
 ## 本机验证
 
