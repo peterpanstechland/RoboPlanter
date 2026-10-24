@@ -17,7 +17,8 @@ const Theme &get(uint8_t id);
 void background(Arduino_GFX &g, uint8_t id);
 void face(Arduino_GFX &g, uint8_t id, int16_t cx, int16_t cy,
           int16_t radius, bool blink, uint32_t now);
-// Monochrome 16x16 pixel glyph, scaled into a square with top-left x/y.
+// Monochrome glyph, scaled into a square with top-left x/y. Settings uses a
+// native 32x32 thin outline; the other pixel glyphs use a 16x16 source grid.
 void icon(Arduino_GFX &g, Icon kind, int16_t x, int16_t y,
           int16_t size, uint16_t color);
 // Water/Temp use a coloured interior and a separate outline; others stay mono.

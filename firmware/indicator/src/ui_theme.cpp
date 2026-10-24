@@ -60,7 +60,19 @@ struct Pixels {
     rect(u,v-1,1,3,color);rect(u-1,v,3,1,color);
   }
 };
-// Hand-authored monochrome pixel glyphs; each row is 16 bits, MSB at left.
+// Native 32px outline: short teeth, a thin centre circle and open space between
+// them. Keeping this at display resolution avoids doubling a chunky 16px ring.
+const uint32_t settingsOutline[32] = {
+    0x00000000U,0x00000000U,0x00000000U,0x00000000U,
+    0x0007E000U,0x00066000U,0x00EE7700U,0x01FC3F80U,
+    0x03300CC0U,0x030000C0U,0x038001C0U,0x0183C180U,
+    0x0307E0C0U,0x0F0C30F0U,0x0E181870U,0x08181810U,
+    0x08181810U,0x0E181870U,0x0F0C30F0U,0x0307E0C0U,
+    0x0183C180U,0x038001C0U,0x030000C0U,0x03300CC0U,
+    0x01FC3F80U,0x00EE7700U,0x00066000U,0x0007E000U,
+    0x00000000U,0x00000000U,0x00000000U,0x00000000U,
+};
+// Other monochrome pixel glyphs: each row is 16 bits, MSB at left.
 const uint16_t icons[][16] = {
     {0x0000,0x0180,0x0180,0x0240,0x0240,0x0420,0x0420,0x0810,
      0x0810,0x1008,0x1008,0x1008,0x1008,0x0810,0x07E0,0x0000}, // Water
@@ -74,8 +86,7 @@ const uint16_t icons[][16] = {
      0x4002,0x4FF2,0x4812,0x3FFC,0x0810,0x0810,0x0FF0,0x0000}, // Print
     {0x0000,0x0FF0,0x1008,0x17E8,0x1428,0x1428,0x1668,0x1428,
      0x15A8,0x17E8,0x1008,0x1188,0x1188,0x1008,0x0FF0,0x0000}, // Yoyo
-    {0x0000,0x03C0,0x03C0,0x1FF8,0x1FF8,0x1C38,0x781E,0x781E,
-     0x781E,0x781E,0x1C38,0x1FF8,0x1FF8,0x03C0,0x03C0,0x0000}, // Settings: square 14x14, eight teeth and open centre
+    {0}, // Settings uses the native 32px outline above.
     {0x0000,0x0000,0x700E,0x781E,0x3C3C,0x1E78,0x0FF0,0x07E0,
      0x03C0,0x0180,0x0180,0x0180,0x0180,0x0180,0x0000,0x0000}, // Leaf
     {0x0000,0x07E0,0x1818,0x2004,0x4182,0x4182,0x4182,0x4182,
@@ -91,12 +102,15 @@ void background(Arduino_GFX &g,uint8_t id) { g.fillScreen(get(id).background); }
 void icon(Arduino_GFX &g,Icon kind,int16_t x,int16_t y,int16_t size,uint16_t color) {
   const uint8_t index=static_cast<uint8_t>(kind);
   if(index>=sizeof(icons)/sizeof(icons[0]) || size<=0)return;
-  Pixels p{g,x,y,size,16};
-  for(int16_t row=0;row<16;++row) {
-    for(int16_t col=0;col<16;) {
-      if(!(icons[index][row]&(0x8000U>>col))) {++col;continue;}
+  const int16_t cells=kind==Icon::Settings ? 32 : 16;
+  Pixels p{g,x,y,size,cells};
+  for(int16_t row=0;row<cells;++row) {
+    const uint32_t bits=kind==Icon::Settings ? settingsOutline[row] : icons[index][row];
+    const uint32_t first=uint32_t(1)<<(cells-1);
+    for(int16_t col=0;col<cells;) {
+      if(!(bits&(first>>col))) {++col;continue;}
       const int16_t start=col++;
-      while(col<16 && (icons[index][row]&(0x8000U>>col)))++col;
+      while(col<cells && (bits&(first>>col)))++col;
       p.rect(start,row,col-start,1,color);
     }
   }
