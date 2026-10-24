@@ -74,6 +74,8 @@ Copy-Item firmware/indicator/include/local_config.example.h firmware/indicator/i
 
 ## 本机验证
 
+2026-10-24 图标微调：Wi-Fi 改为宽扁的双弧线，设置齿轮改为等宽等高的八齿轮廓，顶部使用同一像素倍率并对齐中心。镜像与检查结果见[图标修订记录](docs/deployment/indicator-icons.md)。
+
 本机验证覆盖控制核心、Indicator 页面与实际手势处理、独立设置 UI、网络设置后端、字体、照片打包、HTTP 客户端及 MCP 桥接。养成 v3 新增成长门槛、冷却、独立植物进度、专注奖励和本地存档检查，并扩展原生预览；各版具体验证结果以相应版本记录为准。MCP 测试使用官方 SDK 完成 stdio 握手、发现六个工具，并逐个调用模拟设备；不连接真实硬件或荣耀账号。模拟网络测试不计作实物连网验收。
 
 Indicator 曾分别编译空相册与一张测试照片配置，本轮保持空相册。字库采用 16/24/32/48/64 px 五种原生字号，按当前界面文案生成字符子集。原生 PNG/GIF 预览运行实际固件绘图代码与固定版本 Arduino_GFX 栅格算法；养成版本默认输出为 `build/indicator-preview-v3/`，旧 `build/indicator-preview/` 与 `build/indicator-preview-v2/` 保留。预览使用未知真实花盆状态，以及明确标记的游戏进度和设置样例，不能代替真实背光、网络或屏幕时序验证。

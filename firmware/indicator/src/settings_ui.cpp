@@ -153,7 +153,7 @@ void drawMenu(const ui_theme::Theme &t) {
   button(kChinese, "中文", t, device_settings::getLanguage() == Language::Chinese);
   button(kEnglish, "English", t, device_settings::getLanguage() == Language::English);
   g.fillRoundRect(kWifi.x, kWifi.y, kWifi.w, kWifi.h, 12, t.surface);
-  ui_theme::icon(g, ui_theme::Icon::Wifi, 32, 199, 30, t.accent);
+  ui_theme::icon(g, ui_theme::Icon::Wifi, 31, 198, 32, t.accent);
   text(78, 193, "Wi-Fi", t.ink);
   const auto state = device_settings::wifiState();
   text(78, 226, phaseText(state), t.muted, 16, 338); text(428, 202, ">", t.ink, 24, 24);

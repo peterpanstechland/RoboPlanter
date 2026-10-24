@@ -95,7 +95,8 @@ void header(const State &s) {
     label(62,15,tr("工位伙伴","WORKER"),theme().accent);
     label(62,33,tr("智能盆栽","SMART PLANTER"),theme().ink);
   }
-  icon(Icon::Wifi,284,24,24,device_settings::wifiState().phase==device_settings::WifiPhase::Connected?theme().ink:theme().muted);
+  // Both header glyphs use a crisp 2x pixel grid, centred on the button row.
+  icon(Icon::Wifi,280,18,32,device_settings::wifiState().phase==device_settings::WifiPhase::Connected?theme().ink:theme().muted);
   pill(kTheme,model.themesOpen()?tr("收起","Close"):tr("主题","Theme"),theme().surface,theme().ink);
   g.fillRoundRect(kSettings.x,kSettings.y,kSettings.w,kSettings.h,10,settings_ui::isOpen()?theme().accent:theme().surface);
   icon(Icon::Settings,426,18,32,settings_ui::isOpen()?contrastInk(theme().accent):theme().ink);
