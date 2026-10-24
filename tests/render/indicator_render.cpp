@@ -12,6 +12,8 @@
 #include "../../firmware/indicator/src/ui_text.cpp"
 #include "../../firmware/indicator/src/ui_photos.cpp"
 #include "../../firmware/indicator/src/settings_ui.cpp"
+#include "../../firmware/indicator/src/garden_art.cpp"
+#include "../../firmware/indicator/src/garden_ui.cpp"
 #include <Arduino_G.cpp>
 #include <Arduino_GFX.cpp>
 #include <canvas/Arduino_Canvas.cpp>
@@ -23,10 +25,20 @@ device_settings::Language language = device_settings::Language::Chinese;
 device_settings::WifiSnapshot wifi;
 uint8_t savedBrightness = 80, appliedBrightness = 100;
 unsigned scans = 0;
+garden::Model gardenModel;
+std::string gardenFixture = "new_virtual_game";
 void resetWifi() {
   wifi = device_settings::WifiSnapshot();
   wifi.ready = wifi.persistenceAvailable = true;
 }
+}
+
+// Real game rules, RAM-only storage. Rendering never reads or changes device NVS.
+namespace garden_store {
+bool begin(uint32_t now) { host_fixture::gardenModel.begin(now); return true; }
+garden::Model &model() { return host_fixture::gardenModel; }
+void service(uint32_t now) { host_fixture::gardenModel.tick(now); }
+bool available() { return true; }
 }
 
 namespace {
@@ -36,6 +48,7 @@ unsigned presentCount = 0;
 bool interactionChecks = false;
 std::vector<planter::Action> submitted;
 unsigned checked = 0;
+unsigned artStabilityChecks = 0;
 }
 namespace indicator {
 bool begin() { return hostCanvas.begin(GFX_SKIP_OUTPUT_BEGIN); }
@@ -83,10 +96,12 @@ struct Capture {
   std::string name, kind, page;
   unsigned theme, time;
   std::string language = "zh", fixture = "none";
+  std::string gardenFixture;
 };
 std::vector<Capture> captures;
 void writeFrame(const std::filesystem::path &output, Capture capture) {
   capture.language = device_settings::getLanguage() == device_settings::Language::English ? "en" : "zh";
+  capture.gardenFixture = host_fixture::gardenFixture;
   if (host_fixture::wifi.networkCount) capture.fixture = "sample_network_example";
   renderNow = capture.time;
   draw(hostState, capture.time);
@@ -109,7 +124,11 @@ void writeFrame(const std::filesystem::path &output, Capture capture) {
 }
 void resetPage(uint8_t themeId, uint8_t page) {
   settings_ui::close();
+  garden_ui::close();
   host_fixture::resetWifi();
+  host_fixture::gardenModel = garden::Model();
+  host_fixture::gardenModel.begin(0);
+  host_fixture::gardenFixture = "new_virtual_game";
   model = ui::Model();
   model.selectTheme(themeId);
   controlsOpen = false;
@@ -124,6 +143,147 @@ void tapRect(const Rect &rect, const State &state, uint32_t now) {
   const int16_t x = rect.x + rect.w / 2, y = rect.y + rect.h / 2;
   handle(touch.update(ui::TouchInput::Down, x, y, now), state, now);
   handle(touch.update(ui::TouchInput::Up, 0, 0, now + 20), state, now + 20);
+}
+void focusRewardTests() {
+  interactionChecks = true;
+  resetPage(0, 4); touch = ui::TouchGate(); submitted.clear();
+  model.timer().start(1000);
+  garden_store::service(1500999);
+  const auto before = garden_store::model().current().xp;
+  tickCompanion(1500999);
+  require(garden_store::model().current().xp == before,
+          "An unfinished focus session cannot grant a game reward");
+  garden_store::service(1501000);
+  const auto beforeFinish = garden_store::model().current().xp;
+  tickCompanion(1501000);
+  const auto awarded = garden_store::model().current().xp;
+  require(model.timer().done() && awarded > beforeFinish,
+          "Finishing the real 25-minute timer must reward the virtual plant");
+  tickCompanion(1501000); tickCompanion(1501001);
+  require(garden_store::model().current().xp == awarded && submitted.empty(),
+          "A completed timer grants only one virtual reward and no actuator command");
+
+  for (auto preset : {ui::Preset::ShortBreak5, ui::Preset::LongBreak15}) {
+    resetPage(0, 4); model.timer().selectPreset(preset); model.timer().start(1000);
+    const auto doneAt = 1000 + model.timer().durationMs();
+    garden_store::service(doneAt);
+    const auto breakXp = garden_store::model().current().xp;
+    tickCompanion(doneAt);
+    require(model.timer().done() && garden_store::model().current().xp == breakXp,
+            "A break timer must not count as a completed focus session");
+  }
+  resetPage(0, 4); touch = ui::TouchGate(); model.timer().start(1000);
+  garden_store::service(1500980);
+  const auto edgeXp = garden_store::model().current().xp;
+  tapRect(kTimerReset, hostState, 1500980);
+  require(model.timer().phase() == ui::TimerPhase::Ready && garden_store::model().current().xp > edgeXp,
+          "A reset released at the deadline cannot swallow a completed focus reward");
+  require(submitted.empty(), "Focus rewards must not submit any hardware action");
+  interactionChecks = false;
+}
+void gardenInteractionTests() {
+  constexpr Rect homeCare{24,380,278,48}, homeSpecies{320,76,136,44}, homeMood{316,380,140,48};
+  constexpr Rect water{24,228,210,70}, feed{246,228,210,70}, weed{24,310,210,70}, comfort{246,310,210,70};
+  constexpr Rect secondTile{246,132,210,126}, firstTile{24,132,210,126}, fourthTile{246,270,210,126};
+  interactionChecks = true;
+  resetPage(0, 0); touch = ui::TouchGate(); submitted.clear();
+  tapRect(homeCare, hostState, 1000);
+  require(garden_ui::isOpen() && model.page() == ui::Page::Face && submitted.empty(),
+          "The home care button must open the virtual garden without navigating or acting on hardware");
+  const auto seedXp = garden_store::model().current().xp;
+  tapRect(feed, hostState, 1100);
+  require(garden_store::model().current().xp == seedXp,
+          "The seed-stage feeding control must match its wait-for-sprout label");
+  tapRect(water, hostState, 1200);
+  const auto wateredXp = garden_store::model().current().xp;
+  require(wateredXp == seedXp + 8 && submitted.empty(),
+          "Game watering must add virtual growth without sending a pump request");
+  tapRect(water, hostState, 1300);
+  require(garden_store::model().current().xp == wateredXp && submitted.empty(),
+          "Repeated water taps during cooldown must not farm growth or send a command");
+  tapRect(comfort, hostState, 1400);
+  require(garden_store::model().current().xp == wateredXp + 2 && submitted.empty(),
+          "Comfort must affect only the virtual companion");
+  auto saved = garden_store::model().snapshot();
+  saved.plants[0].weeds = 22;
+  require(garden_store::model().restore(saved, 1500), "Care test fixture must restore");
+  tapRect(weed, hostState, 1500);
+  require(garden_store::model().current().weeds == 0 && submitted.empty(),
+          "Weeding must clear virtual weeds without a hardware request");
+  const auto afterCare = garden_store::model().current().xp;
+  handle(touch.update(ui::TouchInput::Down, 400, 250, 1600), hostState, 1600);
+  handle(touch.update(ui::TouchInput::Down, 100, 250, 1650), hostState, 1650);
+  handle(touch.update(ui::TouchInput::Up, 0, 0, 1680), hostState, 1680);
+  require(garden_ui::isOpen() && model.page() == ui::Page::Face && garden_store::model().current().xp == afterCare,
+          "A swipe on the garden overlay cannot navigate its hidden page or apply care");
+  handle(touch.update(ui::TouchInput::Down, 100, 260, 1700), hostState, 1700);
+  handle(touch.update(ui::TouchInput::Invalid, 0, 0, 1720), hostState, 1720);
+  handle(touch.update(ui::TouchInput::Up, 0, 0, 1740), hostState, 1740);
+  require(garden_store::model().current().xp == afterCare && submitted.empty(),
+          "Invalid touch must not become a game action");
+  tapRect(kBack, hostState, 1800);
+  require(!garden_ui::isOpen() && model.page() == ui::Page::Face,
+          "Back from a garden overlay returns to the companion home");
+  tapRect(homeSpecies, hostState, 1900); tapRect(secondTile, hostState, 2000);
+  require(!garden_ui::isOpen() && garden_store::model().selected() == garden::Species::Basil &&
+          garden_store::model().current().xp == 0,
+          "Selecting basil opens its independent seed progress");
+  tapRect(homeSpecies, hostState, 2100); tapRect(firstTile, hostState, 2200);
+  require(garden_store::model().selected() == garden::Species::Mint && garden_store::model().current().xp == afterCare,
+          "Returning to mint must preserve its existing care progress");
+  tapRect(homeMood, hostState, 2300); tapRect(fourthTile, hostState, 2400);
+  require(!garden_ui::isOpen() && garden_store::model().atmosphere() == garden::Atmosphere::Happy && submitted.empty(),
+          "Desk mood selection must persist in the local model without sending a light or pump action");
+  tapRect(homeCare, hostState, 2500); tapRect(kSettings, hostState, 2600);
+  require(!garden_ui::isOpen() && settings_ui::isOpen() && submitted.empty(),
+          "Opening settings must close the garden overlay");
+  settings_ui::close(); tapRect(homeCare, hostState, 2700); tapRect(kTheme, hostState, 2800);
+  require(!garden_ui::isOpen() && model.themesOpen() && submitted.empty(),
+          "Opening themes must close the garden overlay");
+  resetPage(0, 1); controlsOpen = confirmOpen = true; garden_ui::openCare(); touch = ui::TouchGate();
+  State available; available.received = available.wifi = available.ageKnown = true;
+  available.receivedMs = 1000; available.pumpEnabled = available.printerEnabled = true;
+  tapRect(kConfirmGo, available, 1100); tapRect(kHardware[1], available, 1200);
+  require(garden_ui::isOpen() && submitted.empty(),
+          "A garden overlay must isolate hidden confirmation and direct STOP hitboxes");
+  resetPage(0, 0); touch = ui::TouchGate();
+  interactionChecks = false;
+}
+std::vector<uint16_t> plantBodyPixels(uint8_t species, uint8_t stage, uint32_t now) {
+  hostCanvas.fillScreen(ui_theme::get(0).background);
+  garden_art::draw(hostCanvas, 0, species, stage, 240, 240, 96, 86, 78, 0, now);
+  const auto *pixels = hostCanvas.getFramebuffer();
+  std::vector<uint16_t> body;
+  // Fixed central plant-and-pot region, excluding peripheral decorative sparks
+  // and the herb seed particles. Non-blink frames should not move this body.
+  for (int y = 165; y < 321; ++y)
+    for (int x = 204; x < 276; ++x) body.push_back(pixels[y * 480 + x]);
+  return body;
+}
+void artStabilityTests() {
+  const uint32_t times[] = {1100, 2000, 3200, 4800};
+  for (uint8_t species = 0; species < 4; ++species) for (uint8_t stage = 0; stage < 5; ++stage) {
+    const auto anchored = plantBodyPixels(species, stage, 500);
+    for (const auto time : times) {
+      if (plantBodyPixels(species, stage, time) != anchored)
+        throw std::runtime_error("Plant body must stay anchored between non-blink animation frames");
+      ++artStabilityChecks;
+    }
+  }
+  const auto closed = plantBodyPixels(0, 0, 0);
+  const auto open = plantBodyPixels(0, 0, 300);
+  if (closed == open) throw std::runtime_error("The seed blink must visibly close and reopen its eyes");
+  ++artStabilityChecks;
+  if (plantBodyPixels(0, 0, 200) != closed)
+    throw std::runtime_error("Blink must remain visible for multiple nominal 100 ms frames");
+  ++artStabilityChecks;
+  if (plantBodyPixels(0, 0, 350) != open)
+    throw std::runtime_error("A second short blink must not interrupt the reopened eyes");
+  ++artStabilityChecks;
+  if (plantBodyPixels(0, 0, 5300) != closed)
+    throw std::runtime_error("The next blink cycle must keep the same fixed character anchor");
+  ++artStabilityChecks;
+  std::cout << "PASS: " << artStabilityChecks << " fixed-anchor and visible-blink pixel assertions.\n";
 }
 void interactionTests() {
   interactionChecks = true;
@@ -194,7 +354,6 @@ void interactionTests() {
   resetPage(0, 0); touch = ui::TouchGate(); device_settings::setLanguage(device_settings::Language::Chinese);
   indicator::setBrightness(80); device_settings::saveBrightness(80);
   interactionChecks = false;
-  std::cout << "PASS: " << checked << " real handle/TouchGate interaction assertions.\n";
 }
 
 void captureScreens(const std::filesystem::path &output, uint8_t themeId, const std::string &prefix) {
@@ -242,6 +401,51 @@ void captureSettings(const std::filesystem::path &output, const std::string &lan
   writeFrame(output, {prefix + "keyboard-symbols-2", "screen", "settings-keyboard-symbols-2", 0, 2400});
   settings_ui::close();
 }
+const char *speciesNames[] = {"mint", "basil", "rose", "succulent"};
+const char *stageNames[] = {"seed", "sprout", "leafy", "bloom", "mature"};
+void gameFixture(uint8_t species, uint8_t stage, uint32_t now = 1000) {
+  auto saved = garden_store::model().snapshot();
+  saved.selected = static_cast<garden::Species>(species);
+  auto &plant = saved.plants[species];
+  plant.xp = garden::kStageXp[stage];
+  plant.activeSeconds = garden::kStageMinutes[stage] * 60;
+  plant.partialMs = 0;
+  plant.health = 86; plant.moisture = 62; plant.nutrition = 55;
+  plant.weeds = stage ? 12 : 0; plant.mood = 78;
+  saved.totalActiveSeconds = plant.activeSeconds;
+  require(garden_store::model().restore(saved, now), "Virtual stage fixture must be valid");
+  require(static_cast<uint8_t>(garden_store::model().stage()) == stage,
+          "Each growth capture must show the stage named by its fixture");
+  host_fixture::gardenFixture = std::string("virtual_") + speciesNames[species] + "_" + stageNames[stage];
+}
+void captureGarden(const std::filesystem::path &output) {
+  device_settings::setLanguage(device_settings::Language::Chinese);
+  for (uint8_t species = 0; species < 4; ++species) for (uint8_t stage = 0; stage < 5; ++stage) {
+    resetPage(0, 0); gameFixture(species, stage);
+    const auto name = std::string("garden-") + speciesNames[species] + "-" + stageNames[stage];
+    writeFrame(output, {name, "screen", "garden-stage", 0, 1000});
+  }
+  for (bool english : {false, true}) {
+    device_settings::setLanguage(english ? device_settings::Language::English : device_settings::Language::Chinese);
+    const std::string prefix = english ? "en-garden-" : "zh-garden-";
+    resetPage(0, 0); gameFixture(2, 3); garden_ui::openCare();
+    writeFrame(output, {prefix + "care", "screen", "garden-care", 0, 1000});
+    tapRect({24,228,210,70}, hostState, 1100);
+    writeFrame(output, {prefix + "care-watered", "screen", "garden-care-watered", 0, 1120});
+    tapRect({24,228,210,70}, hostState, 1300);
+    writeFrame(output, {prefix + "care-cooldown", "screen", "garden-care-cooldown", 0, 1320});
+    garden_ui::close(); garden_ui::openSpecies();
+    writeFrame(output, {prefix + "species", "screen", "garden-species", 0, 1000});
+    garden_ui::close(); garden_ui::openMood();
+    writeFrame(output, {prefix + "mood", "screen", "garden-mood", 0, 1000});
+    garden_ui::close();
+    for (uint8_t mood = 0; mood < 4; ++mood) {
+      garden_store::model().setAtmosphere(static_cast<garden::Atmosphere>(mood));
+      writeFrame(output, {prefix + "atmosphere-" + std::to_string(mood), "screen", "garden-atmosphere", 0, 1000});
+    }
+  }
+  device_settings::setLanguage(device_settings::Language::Chinese);
+}
 }
 int main(int argc, char **argv) {
   try {
@@ -251,6 +455,11 @@ int main(int argc, char **argv) {
     setup();
     if (!displayReady) throw std::runtime_error("Host canvas allocation failed");
     interactionTests();
+    focusRewardTests();
+    gardenInteractionTests();
+    artStabilityTests();
+    const unsigned interactionCount = checked;
+    std::cout << "PASS: " << interactionCount << " real dispatcher, touch, garden, and focus assertions.\n";
     for (uint8_t themeId = 0; themeId < ui_theme::kCount; ++themeId) {
       const std::string prefix = "theme-" + std::to_string(themeId) + "-";
       captureScreens(output, themeId, prefix);
@@ -264,6 +473,7 @@ int main(int argc, char **argv) {
     device_settings::setLanguage(device_settings::Language::English);
     captureScreens(output, 0, "en-theme-0-");
     captureSettings(output, "en");
+    captureGarden(output);
     device_settings::setLanguage(device_settings::Language::Chinese);
     resetPage(0, 4); model.timer().start(1000);
     writeFrame(output, {"timer-running", "screen", "focus", 0, 61100});
@@ -273,14 +483,17 @@ int main(int argc, char **argv) {
     writeFrame(output, {"timer-completed", "screen", "focus", 0, 1500000});
     std::ofstream manifest(output / "captures.json");
     manifest << "{\"width\":480,\"height\":480,\"state\":\"disconnected_unknown\",\"interaction_assertions\":"
-             << checked << ",\"settings_backend\":\"host_sample_fixture_no_network\",\"frame_duration_ms\":100,\"captures\":[\n";
+             << interactionCount << ",\"game_fixture_assertions\":" << checked - interactionCount
+             << ",\"art_stability_assertions\":" << artStabilityChecks
+             << ",\"settings_backend\":\"host_sample_fixture_no_network\",\"game_backend\":\"production_model_ram_only_store\",\"frame_duration_ms\":100,\"captures\":[\n";
     for (size_t i = 0; i < captures.size(); ++i) {
       const auto &c = captures[i];
       if (i) manifest << ",\n";
       manifest << "{\"name\":\"" << c.name << "\",\"kind\":\"" << c.kind
                << "\",\"page\":\"" << c.page << "\",\"theme\":" << c.theme
                << ",\"time_ms\":" << c.time << ",\"language\":\"" << c.language
-               << "\",\"fixture\":\"" << c.fixture << "\"}";
+               << "\",\"fixture\":\"" << c.fixture
+               << "\",\"game_fixture\":\"" << c.gardenFixture << "\"}";
     }
     manifest << "\n]}\n";
     std::cout << "Rendered " << captures.size() << " actual firmware frames at 480 x 480; no device I/O.\n";

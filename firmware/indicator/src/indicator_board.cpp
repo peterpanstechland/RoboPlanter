@@ -1,4 +1,5 @@
 #include "indicator_board.h"
+#include "indicator_rgb_driver.h"
 #include <Wire.h>
 #include <esp32-hal-ledc.h>
 
@@ -58,15 +59,45 @@ class ExpanderSpi : public Arduino_SWSPI {
   }
 };
 ExpanderSpi spi;
-Arduino_ESP32RGBPanel panel(
-    18, 17, 16, 21,
-    4, 3, 2, 1, 0,
-    10, 9, 8, 7, 6, 5,
-    15, 14, 13, 12, 11,
-    1, 10, 8, 50, 1, 10, 8, 20);
-Arduino_RGB_Display scanout(480, 480, &panel, 0, false, &spi, GFX_NOT_DEFINED,
-                       st7701_type1_init_operations,
-                       sizeof(st7701_type1_init_operations));
+// begin() is a virtual extension point in Arduino_RGB_Display 1.4.7, and its
+// framebuffer fields are protected. The drawing/flush implementation remains
+// unchanged; only the scanout driver is replaced. Arduino_ESP32RGBPanel's
+// nonvirtual getFrameBuffer() and private ESP-IDF layout are not used.
+class IndicatorScanout : public Arduino_RGB_Display {
+ public:
+  IndicatorScanout() : Arduino_RGB_Display(480, 480, nullptr, 0, false, &spi,
+      GFX_NOT_DEFINED, st7701_type1_init_operations,
+      sizeof(st7701_type1_init_operations)) {}
+  bool begin(int32_t speed = GFX_NOT_DEFINED) override {
+    if (!_bus->begin()) return false;
+    _bus->sendCommand(0x01);
+    delay(120);
+    _bus->batchOperation(const_cast<uint8_t *>(_init_operations), _init_operations_len);
+    esp_lcd_rgb_panel_config_t config = {};
+    config.clk_src = LCD_CLK_SRC_PLL160M;
+    config.timings.pclk_hz = speed == GFX_NOT_DEFINED ? 12000000 : speed;
+    config.timings.h_res = _fb_width;
+    config.timings.v_res = _fb_height;
+    config.timings.hsync_pulse_width = 8;
+    config.timings.hsync_back_porch = 50;
+    config.timings.hsync_front_porch = 10;
+    config.timings.vsync_pulse_width = 8;
+    config.timings.vsync_back_porch = 20;
+    config.timings.vsync_front_porch = 10;
+    config.data_width = 16;
+    config.sram_trans_align = 8;
+    config.psram_trans_align = 64;
+    config.de_gpio_num = 18; config.vsync_gpio_num = 17;
+    config.hsync_gpio_num = 16; config.pclk_gpio_num = 21;
+    // RGB565 bus order: B0..B4, G0..G5, R0..R4, identical to the old GFX panel.
+    const int pins[] = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+    for (uint8_t i = 0; i < 16; ++i) config.data_gpio_nums[i] = pins[i];
+    config.disp_gpio_num = -1;
+    config.flags.fb_in_psram = true;
+    return indicator_rgb::begin(config, true, &_framebuffer);
+  }
+};
+IndicatorScanout scanout;
 // RGB DMA keeps scanning its framebuffer even with auto_flush=false. Drawing
 // the background directly there exposes each intermediate clear/paint step.
 // Keep composition in a separate PSRAM buffer and copy only a complete frame.
@@ -128,6 +159,14 @@ void present() {
   canvas.flush();
   // Arduino_Canvas copies to its output but does not call output.flush().
   scanout.flush();
+}
+DisplayStats displayStats() {
+  const auto value = indicator_rgb::stats();
+  DisplayStats result;
+  result.ready = value.ready; result.frames = value.frames;
+  result.maxGapUs = value.maxGapUs; result.lastGapUs = value.lastGapUs;
+  result.currentGapUs = value.currentGapUs;
+  return result;
 }
 void setBrightness(uint8_t percent) {
   backlightPercent = percent < 5 ? 5 : (percent > 100 ? 100 : percent);

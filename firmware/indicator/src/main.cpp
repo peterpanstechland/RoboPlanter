@@ -4,7 +4,11 @@
 #include "config.h"
 #include "device_settings.h"
 #include "settings_ui.h"
+#include "garden_store.h"
+#include "garden_ui.h"
+#include "garden_art.h"
 #include "indicator_board.h"
+#include "lcd_diagnostics.h"
 #include "planter_client.h"
 #include "ui_model.h"
 #include "ui_photos.h"
@@ -82,10 +86,10 @@ void statusStrip(const State &s,uint32_t now) {
 }
 void header(const State &s) {
   auto &g=indicator::display();
-  if(model.page()!=ui::Page::Face || controlsOpen || model.themesOpen() || settings_ui::isOpen()) {
+  if(model.page()!=ui::Page::Face || controlsOpen || model.themesOpen() || settings_ui::isOpen() || garden_ui::isOpen()) {
     g.fillRoundRect(kBack.x,kBack.y,kBack.w,kBack.h,10,theme().surface);
     icon(Icon::Back,28,24,20,theme().ink);
-    clipped(74,25,settings_ui::isOpen()?settings_ui::title():tr("工位盆栽","WORKER"),200,theme().muted);
+    clipped(74,25,settings_ui::isOpen()?settings_ui::title():garden_ui::isOpen()?garden_ui::title():tr("工位盆栽","WORKER"),200,theme().muted);
   } else {
     icon(Icon::Leaf,24,20,28,theme().accent);
     label(62,15,tr("工位伙伴","WORKER"),theme().accent);
@@ -111,19 +115,7 @@ void miniReading(int x,Icon kind,const planter::Reading &r,const char *unit,bool
   label(x+36,420,value,r.valid&&fresh?theme().ink:theme().muted);
 }
 void facePage(const State &s,uint32_t now) {
-  ui_text::drawSized(indicator::display(),25,80,tr("工位小绿洲","Desk garden"),theme().ink,24);
-  label(26,120,tr("忙碌也要慢慢生长","A GREENER WORKDAY."),theme().muted);
-  auto &g=indicator::display();
-  g.fillRoundRect(348,80,108,28,7,theme().surface);
-  label(359,86,tr("陪伴模式","Companion"),theme().accent);
-  ui_theme::deskScene(g,model.theme(),now);
-  const uint32_t phase=now%5300U;
-  ui_theme::face(g,model.theme(),240,252,104,phase<160 || (phase>350 && phase<460),now);
-  pill({104,360,272,38},tr("今天也在慢慢生长","Still growing."),theme().card,theme().cardInk);
-  miniReading(38,Icon::Water,soilReading(s),"%",planter::fresh(s,now));
-  miniReading(188,Icon::Temp,s.temperature,"C",planter::fresh(s,now));
-  miniReading(334,Icon::Humidity,s.humidity,"%",planter::fresh(s,now));
-  if(s.received && !planter::fresh(s,now))label(352,391,tr("* 旧读数","* Old values"),theme().muted);
+  garden_ui::drawHome(now,model.theme());
   statusStrip(s,now);
 }
 void readingCard(const Rect &r,Icon kind,const char *name,const planter::Reading &reading,const char *unit,bool fresh,const char *invalid=nullptr,bool percent=false) {
@@ -212,7 +204,9 @@ void focusPage(const State &s,uint32_t now) {
   const uint32_t seconds=(timer.remainingMs(now)+999)/1000;char clock[12];
   snprintf(clock,sizeof(clock),"%02lu:%02lu",static_cast<unsigned long>(seconds/60),static_cast<unsigned long>(seconds%60));
   label(46,198,clock,theme().cardInk,4);
-  ui_theme::face(g,model.theme(),385,226,43,(now%5300)<160,now);
+  const auto &pet=garden_store::model().current();
+  garden_art::draw(g,model.theme(),static_cast<uint8_t>(garden_store::model().selected()),
+    static_cast<uint8_t>(garden_store::model().stage()),385,226,43,pet.health,pet.mood,pet.weeds,now);
   const int progress=timer.durationMs()?static_cast<uint64_t>(timer.durationMs()-timer.remainingMs(now))*392/timer.durationMs():0;
   g.fillRoundRect(44,278,392,6,3,0xD6B9);if(progress>0)g.fillRoundRect(44,278,progress,6,3,theme().accent);
   const char *presets[]={tr("专注 25 分","Focus 25m"),tr("短歇 5 分","Break 5m"),tr("长歇 15 分","Rest 15m")};
@@ -307,7 +301,9 @@ void themePage(uint32_t now) {
     const int x=24+(i%2)*222,y=119+(i/2)*82;const auto &t=ui_theme::get(i);
     g.fillRoundRect(x,y,210,74,10,t.surface);
     if(i==model.theme()){g.drawRoundRect(x,y,210,74,10,theme().accent);g.drawRoundRect(x+1,y+1,208,72,9,theme().accent);}
-    ui_theme::face(g,i,x+39,y+38,31,false,now);
+    const auto &pet=garden_store::model().current();
+    garden_art::draw(g,i,static_cast<uint8_t>(garden_store::model().selected()),
+      static_cast<uint8_t>(garden_store::model().stage()),x+39,y+38,31,pet.health,pet.mood,pet.weeds,now);
     label(x+82,y+16,tr(t.name,englishNames[i]),t.ink);
     g.fillRect(x+82,y+44,16,7,t.accent);g.fillRect(x+103,y+44,16,7,t.second);g.fillRect(x+124,y+44,16,7,t.card);
     if(i==model.theme())label(x+149,y+41,tr("当前","Active"),t.muted);
@@ -316,6 +312,7 @@ void themePage(uint32_t now) {
 void draw(const State &s,uint32_t now) {
   ui_theme::background(indicator::display(),model.theme());header(s);
   if(settings_ui::isOpen())settings_ui::draw(now,model.theme());
+  else if(garden_ui::isOpen()){garden_ui::draw(now,model.theme());statusStrip(s,now);}
   else if(model.themesOpen())themePage(now);
   else if(controlsOpen)controlsPage(s,now);
   else switch(model.page()) {
@@ -327,11 +324,25 @@ void draw(const State &s,uint32_t now) {
   }
   indicator::present();
 }
+void tickCompanion(uint32_t now) {
+  garden_store::service(now);
+  const bool running=model.timer().running();
+  const auto preset=model.timer().preset();
+  model.timer().tick(now);
+  if(running && model.timer().done() && preset==ui::Preset::Focus25)garden_ui::focusCompleted(now);
+}
 void handle(ui::Gesture gesture,const State &s,uint32_t now) {
+  tickCompanion(now);
   if(gesture==ui::Gesture::None)return;
   if(gesture==ui::Gesture::Tap && tapped(kSettings)) {
     if(settings_ui::isOpen())settings_ui::close();
-    else {model.closeThemes();controlsOpen=false;confirmOpen=false;settings_ui::open();}
+    else {garden_ui::close();model.closeThemes();controlsOpen=false;confirmOpen=false;settings_ui::open();}
+    return;
+  }
+  if(garden_ui::isOpen()) {
+    if(gesture==ui::Gesture::Tap && tapped(kBack))garden_ui::close();
+    else if(gesture==ui::Gesture::Tap && tapped(kTheme)){garden_ui::close();model.openThemes();}
+    else garden_ui::handle(gesture,touch,now);
     return;
   }
   if(settings_ui::isOpen()) {
@@ -373,7 +384,9 @@ void handle(ui::Gesture gesture,const State &s,uint32_t now) {
     return;
   }
   switch(model.page()) {
-    case ui::Page::Face:if(tapped({72,138,336,266}))model.tapFace();break;
+    case ui::Page::Face:
+      if(garden_ui::handleHome(gesture,touch,now))return;
+      if(tapped({72,138,336,200}))model.tapFace();break;
     case ui::Page::Today:if(tapped(kControls))controlsOpen=true;break;
     case ui::Page::Info:break;
     case ui::Page::Photos:
@@ -394,27 +407,33 @@ void setup() {
   indicator::setBrightness(device_settings::getBrightness());
   prefsReady=preferences.begin("rp-ui",false);
   if(prefsReady)model.selectTheme(preferences.getUChar("theme",0)%ui_theme::kCount);
+  const bool gardenReady=garden_store::begin(millis());
   displayReady=indicator::begin();
   if(!displayReady){Serial.println("Indicator LCD init failed: check OPI PSRAM / original ST7701 panel.");return;}
   clientReady=planter::begin();
   Serial.printf("Indicator init: display=%s touch=%s client_task=%s preferences=%s\n",displayReady?"ready":"failed",indicator::touchReady()?"ready":"not_found",clientReady?"ready":"failed",prefsReady?"ready":"unavailable");
   Serial.println("Indicator renderer: offscreen canvas -> complete frame copy.");
-  Serial.println("Indicator UI: Worker Smart Planter v2 / native fonts / zh-en settings.");
+  Serial.println("Indicator UI: Worker Smart Planter v3 / growing plant spirit / zh-en settings.");
+  Serial.printf("Indicator garden: storage=%s species=%u stage=%u\n",gardenReady?"ready":"unavailable",
+    static_cast<unsigned>(garden_store::model().selected()),static_cast<unsigned>(garden_store::model().stage()));
   Serial.printf("Indicator settings: language=%s brightness=%u%% storage=%s\n",
     device_settings::getLanguage()==device_settings::Language::English?"en":"zh",
     indicator::brightness(),device_settings::wifiState().persistenceAvailable?"ready":"unavailable");
   draw(planter::snapshot(),millis());
+#if defined(ARDUINO) && defined(RP_LCD_FLASH_STRESS)
+  lcd_diagnostics::runFlashStress();
+#endif
 }
 void loop() {
   if(!displayReady){delay(100);return;}
-  const uint32_t now=millis();model.timer().tick(now);
+  const uint32_t now=millis();tickCompanion(now);
   int16_t x=0,y=0;const auto input=indicator::readTouchStatus(x,y);
   const ui::TouchInput mapped=input==indicator::TouchStatus::Down?ui::TouchInput::Down:input==indicator::TouchStatus::Up?ui::TouchInput::Up:ui::TouchInput::Invalid;
   const ui::Gesture gesture=touch.update(mapped,x,y,now);
   static uint32_t lastDraw=0;static bool first=true;const State state=planter::snapshot();
   if(gesture!=ui::Gesture::None)handle(gesture,state,now);
   const bool animated=!model.themesOpen() && !settings_ui::isOpen() &&
-      ((!controlsOpen && (model.page()==ui::Page::Face || model.page()==ui::Page::Focus)) ||
+      (garden_ui::isOpen() || (!controlsOpen && (model.page()==ui::Page::Face || model.page()==ui::Page::Focus)) ||
        (controlsOpen && (confirmOpen || (state.pumpKnown && state.pumpOn && planter::fresh(state,now)))));
   const uint32_t interval=animated?100:1000;
   if(first||gesture!=ui::Gesture::None||now-lastDraw>=interval){draw(state,now);lastDraw=millis();first=false;}

@@ -5,10 +5,11 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $rpRoot = Split-Path -Parent $PSScriptRoot
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $rpRoot 'build\indicator-preview-v2' }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $rpRoot 'build\indicator-preview-v3' }
 $rpOutput = [System.IO.Path]::GetFullPath($OutputDirectory)
-if ($rpOutput.TrimEnd('\') -ieq (Join-Path $rpRoot 'build\indicator-preview')) {
-  throw 'The deployed v1 preview is preserved; choose build/indicator-preview-v2.'
+if ($rpOutput.TrimEnd('\') -ieq (Join-Path $rpRoot 'build\indicator-preview') -or
+    $rpOutput.TrimEnd('\') -ieq (Join-Path $rpRoot 'build\indicator-preview-v2')) {
+  throw 'The deployed v1/v2 previews are preserved; choose build/indicator-preview-v3.'
 }
 $rpBuild = Join-Path $rpOutput 'native-build'
 $rpFrames = Join-Path $rpOutput 'frames'
