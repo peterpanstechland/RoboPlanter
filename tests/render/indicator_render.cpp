@@ -45,15 +45,22 @@ namespace {
 Arduino_Canvas hostCanvas(480, 480, nullptr);
 planter::State hostState; // Deliberately unknown: no sensor or actuator fixtures.
 unsigned presentCount = 0;
+unsigned displayAccessCount = 0;
+bool failNextPresent = false;
 bool interactionChecks = false;
 std::vector<planter::Action> submitted;
 unsigned checked = 0;
 unsigned artStabilityChecks = 0;
+unsigned displayFailureChecks = 0;
 }
 namespace indicator {
 bool begin() { return hostCanvas.begin(GFX_SKIP_OUTPUT_BEGIN); }
-Arduino_GFX &display() { return hostCanvas; }
-void present() { ++presentCount; }
+Arduino_GFX &display() { ++displayAccessCount; return hostCanvas; }
+bool present() {
+  ++presentCount;
+  if (failNextPresent) { failNextPresent = false; return false; }
+  return true;
+}
 void setBrightness(uint8_t value) { host_fixture::appliedBrightness = constrain(value, 5, 100); }
 uint8_t brightness() { return host_fixture::appliedBrightness; }
 bool touchReady() { return true; }
@@ -285,6 +292,41 @@ void artStabilityTests() {
   ++artStabilityChecks;
   std::cout << "PASS: " << artStabilityChecks << " fixed-anchor and visible-blink pixel assertions.\n";
 }
+void displayFailureTests() {
+  auto check = [](bool value, const char *message) {
+    if (!value) throw std::runtime_error(message);
+    ++displayFailureChecks;
+  };
+  resetPage(0, 0); touch = ui::TouchGate(); renderNow = 1000;
+  const auto beforePresent = presentCount;
+  const auto beforeMessage = Serial.lineCount;
+  failNextPresent = true;
+  // Invoke the production loop, including its first-frame draw and failure path.
+  // The host boundary refuses exactly this one frame handoff.
+  loop();
+  check(presentCount == beforePresent + 1 && !failNextPresent && !displayReady,
+        "A failed frame handoff must disable rendering in the production loop");
+  check(Serial.lineCount == beforeMessage + 1 && Serial.lastLine.find("handoff failed") != std::string::npos,
+        "The failed handoff must emit a clear diagnostic once");
+  const auto stoppedPresent = presentCount, stoppedAccess = displayAccessCount;
+  const auto stoppedMessage = Serial.lineCount;
+  const auto stoppedTime = renderNow;
+  const auto *pixels = hostCanvas.getFramebuffer();
+  const std::vector<uint16_t> stoppedFrame(pixels, pixels + 480U * 480U);
+  for (unsigned i = 0; i < 3; ++i) loop();
+  check(!displayReady && presentCount == stoppedPresent,
+        "Subsequent loop calls cannot retry a failed frame handoff");
+  check(displayAccessCount == stoppedAccess,
+        "Subsequent loop calls cannot obtain or draw into the display framebuffer");
+  check(std::equal(stoppedFrame.begin(), stoppedFrame.end(), hostCanvas.getFramebuffer()),
+        "The last framebuffer must remain unchanged after a failed handoff");
+  check(renderNow > stoppedTime && Serial.lineCount == stoppedMessage,
+        "The stopped loop must yield time without repeatedly logging the same failure");
+  // Test teardown only. Production intentionally requires a restart to recover.
+  displayReady = true; failNextPresent = false;
+  resetPage(0, 0); renderNow = 0;
+  std::cout << "PASS: " << displayFailureChecks << " production-loop frame-handoff failure assertions.\n";
+}
 void interactionTests() {
   interactionChecks = true;
   State available;
@@ -457,6 +499,7 @@ int main(int argc, char **argv) {
     interactionTests();
     focusRewardTests();
     gardenInteractionTests();
+    displayFailureTests();
     artStabilityTests();
     const unsigned interactionCount = checked;
     std::cout << "PASS: " << interactionCount << " real dispatcher, touch, garden, and focus assertions.\n";
@@ -485,6 +528,7 @@ int main(int argc, char **argv) {
     manifest << "{\"width\":480,\"height\":480,\"state\":\"disconnected_unknown\",\"interaction_assertions\":"
              << interactionCount << ",\"game_fixture_assertions\":" << checked - interactionCount
              << ",\"art_stability_assertions\":" << artStabilityChecks
+             << ",\"display_failure_assertions\":" << displayFailureChecks
              << ",\"settings_backend\":\"host_sample_fixture_no_network\",\"game_backend\":\"production_model_ram_only_store\",\"frame_duration_ms\":100,\"captures\":[\n";
     for (size_t i = 0; i < captures.size(); ++i) {
       const auto &c = captures[i];

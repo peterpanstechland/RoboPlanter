@@ -28,8 +28,10 @@ inline size_t strlcpy(char *dst, const char *src, size_t capacity) {
   return length;
 }
 struct RenderSerial {
+  unsigned lineCount = 0;
+  std::string lastLine;
   void begin(unsigned long) {}
-  void println(const char *) {}
+  void println(const char *value) { ++lineCount; lastLine = value ? value : ""; }
   template<class... T> void printf(const char *, T...) {}
 };
 inline RenderSerial Serial;

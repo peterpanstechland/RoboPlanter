@@ -2,7 +2,7 @@
 
 原版 SenseCAP Indicator D1，480×480 电容触摸屏。YOYO 负责自然语言交互；Indicator 提供植物精灵养成、真实状态和本地番茄钟。界面参考 Worker Smart Planter：炭黑底、奶油白信息卡、鼠尾草绿主色，搭配柔紫和水蓝。本轮首页加入薄荷、九层塔、蔷薇和多肉，从种子逐步成长，显示生命条、精灵心情和工位氛围；完整规则见[植物精灵说明](indicator-garden.md)。
 
-这里描述的是 `firmware/indicator/` 的原生绘制实现。养成 v3 的原生预览直接运行固件绘图代码并导出帧，默认输出到 `build/indicator-preview-v3/`。[第一版原生动画](previews/indicator-worker.gif)与[第一版页面总览](previews/indicator-worker-overview.png)、`build/indicator-preview/`、设置版 `build/indicator-preview-v2/` 均保留作历史对照；旧浏览器 HTML 是更早的独立原型，不能代表当前布局。v3 初版收到偶发闪屏反馈，固定主体位置与修订刷新中断后的版本已刷入，96 次存档压力测试通过，实屏稳定性仍待用户确认，见[养成部署记录](deployment/indicator-garden-ui.md)；v2 字体、背光和 Wi-Fi 扫描已获用户确认，版本详情见[设置界面记录](deployment/indicator-settings-ui.md)。
+这里描述的是 `firmware/indicator/` 的原生绘制实现。养成 v3 的原生预览直接运行固件绘图代码并导出帧，默认输出到 `build/indicator-preview-v3/`。[第一版原生动画](previews/indicator-worker.gif)与[第一版页面总览](previews/indicator-worker-overview.png)、`build/indicator-preview/`、设置版 `build/indicator-preview-v2/` 均保留作历史对照；旧浏览器 HTML 是更早的独立原型，不能代表当前布局。v3 在第一轮刷新中断修订后仍有偶发闪屏反馈；当前已刷入 VSYNC 双缓冲版本，96 次完整帧交换与存档读回通过，实屏效果待确认，见[双缓冲修订记录](deployment/indicator-vsync-double-buffer.md)及[养成历史记录](deployment/indicator-garden-ui.md)。v2 字体、背光和 Wi-Fi 扫描已获用户确认，版本详情见[设置界面记录](deployment/indicator-settings-ui.md)。
 
 ## 页面与手势
 

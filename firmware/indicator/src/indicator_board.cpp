@@ -59,25 +59,29 @@ class ExpanderSpi : public Arduino_SWSPI {
   }
 };
 ExpanderSpi spi;
-// begin() is a virtual extension point in Arduino_RGB_Display 1.4.7, and its
-// framebuffer fields are protected. The drawing/flush implementation remains
-// unchanged; only the scanout driver is replaced. Arduino_ESP32RGBPanel's
-// nonvirtual getFrameBuffer() and private ESP-IDF layout are not used.
-class IndicatorScanout : public Arduino_RGB_Display {
+// Canvas keeps its normal drawing implementation, but borrows the driver's
+// back buffer instead of allocating a third framebuffer. No full-frame copy
+// is needed. Protected fields/virtual begin are supported GFX extension points;
+// there is no access to an opaque IDF handle or a private GFX object layout.
+class IndicatorCanvas : public Arduino_Canvas {
  public:
-  IndicatorScanout() : Arduino_RGB_Display(480, 480, nullptr, 0, false, &spi,
-      GFX_NOT_DEFINED, st7701_type1_init_operations,
-      sizeof(st7701_type1_init_operations)) {}
+  IndicatorCanvas() : Arduino_Canvas(480, 480, nullptr) {}
+  ~IndicatorCanvas() {
+    // Arduino_Canvas owns/frees its normal allocation. These two buffers are
+    // owned by the driver and may still be in use by DMA at destruction.
+    _framebuffer = nullptr;
+  }
   bool begin(int32_t speed = GFX_NOT_DEFINED) override {
-    if (!_bus->begin()) return false;
-    _bus->sendCommand(0x01);
+    if (!spi.begin()) return false;
+    spi.sendCommand(0x01);
     delay(120);
-    _bus->batchOperation(const_cast<uint8_t *>(_init_operations), _init_operations_len);
+    spi.batchOperation(const_cast<uint8_t *>(st7701_type1_init_operations),
+                       sizeof(st7701_type1_init_operations));
     esp_lcd_rgb_panel_config_t config = {};
     config.clk_src = LCD_CLK_SRC_PLL160M;
     config.timings.pclk_hz = speed == GFX_NOT_DEFINED ? 12000000 : speed;
-    config.timings.h_res = _fb_width;
-    config.timings.v_res = _fb_height;
+    config.timings.h_res = WIDTH;
+    config.timings.v_res = HEIGHT;
     config.timings.hsync_pulse_width = 8;
     config.timings.hsync_back_porch = 50;
     config.timings.hsync_front_porch = 10;
@@ -96,12 +100,14 @@ class IndicatorScanout : public Arduino_RGB_Display {
     config.flags.fb_in_psram = true;
     return indicator_rgb::begin(config, true, &_framebuffer);
   }
+  bool present() {
+    if (!_framebuffer) return false;
+    // The driver revokes the old pointer immediately and returns a new one
+    // only after VSYNC stopped reading it. Failure leaves no writable buffer.
+    return indicator_rgb::present(&_framebuffer);
+  }
 };
-IndicatorScanout scanout;
-// RGB DMA keeps scanning its framebuffer even with auto_flush=false. Drawing
-// the background directly there exposes each intermediate clear/paint step.
-// Keep composition in a separate PSRAM buffer and copy only a complete frame.
-Arduino_Canvas canvas(480, 480, &scanout);
+IndicatorCanvas canvas;
 
 // The Seeed Arduino tutorial's full example adds these two orientation bits
 // to Arduino_GFX's type1 table and maps touch as (479-x, 479-y).
@@ -136,7 +142,7 @@ bool begin() {
   spi.batchOperation(kOrientation, sizeof(kOrientation));
   if (!i2cHealthy) return false;
   canvas.fillScreen(0);
-  present();
+  if (!present()) return false;
   if (ledcSetup(kBacklightChannel, kBacklightHz, kBacklightBits) == 0) return false;
   ledcWrite(kBacklightChannel, 0);
   ledcAttachPin(kBacklightPin, kBacklightChannel);
@@ -155,17 +161,17 @@ bool begin() {
   return true;
 }
 Arduino_GFX &display() { return canvas; }
-void present() {
-  canvas.flush();
-  // Arduino_Canvas copies to its output but does not call output.flush().
-  scanout.flush();
-}
+bool present() { return canvas.present(); }
 DisplayStats displayStats() {
   const auto value = indicator_rgb::stats();
   DisplayStats result;
   result.ready = value.ready; result.frames = value.frames;
   result.maxGapUs = value.maxGapUs; result.lastGapUs = value.lastGapUs;
   result.currentGapUs = value.currentGapUs;
+  result.presentCalls = value.presentCalls; result.swaps = value.swaps;
+  result.timeouts = value.timeouts; result.underflows = value.underflows;
+  result.descErrors = value.descErrors; result.missingEof = value.missingEof;
+  result.lastDmaRaw = value.lastDmaRaw;
   return result;
 }
 void setBrightness(uint8_t percent) {

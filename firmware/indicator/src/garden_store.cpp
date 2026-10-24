@@ -120,12 +120,18 @@ void service(uint32_t now) {
   // logging the save contents, network state, or any credentials.
   const uint32_t writeUs = micros() - writeStartedUs;
   const auto framesAfter = indicator::displayStats();
-  Serial.printf("Garden save: uptime_ms=%lu duration_us=%lu result=%s rgb_frames=%lu max_gap_us=%lu current_gap_us=%lu\n",
+  Serial.printf("Garden save: uptime_ms=%lu duration_us=%lu result=%s rgb_frames=%lu max_gap_us=%lu current_gap_us=%lu presents=%lu swaps=%lu timeouts=%lu dma_udf=%lu dma_desc=%lu dma_no_eof=%lu\n",
                 static_cast<unsigned long>(now),
                 static_cast<unsigned long>(writeUs), ok ? "ok" : "failed",
                 static_cast<unsigned long>(framesAfter.frames - framesBefore.frames),
                 static_cast<unsigned long>(framesAfter.maxGapUs),
-                static_cast<unsigned long>(framesAfter.currentGapUs));
+                static_cast<unsigned long>(framesAfter.currentGapUs),
+                static_cast<unsigned long>(framesAfter.presentCalls),
+                static_cast<unsigned long>(framesAfter.swaps),
+                static_cast<unsigned long>(framesAfter.timeouts),
+                static_cast<unsigned long>(framesAfter.underflows),
+                static_cast<unsigned long>(framesAfter.descErrors),
+                static_cast<unsigned long>(framesAfter.missingEof));
 #endif
 }
 } // namespace garden_store

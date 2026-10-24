@@ -3,13 +3,16 @@
 namespace indicator {
 bool begin();
 Arduino_GFX &display();
-// Compose off-screen, then copy the finished frame to the RGB scanout buffer.
-void present();
+// Commit a completely repainted frame at VSYNC, then acquire the old front.
+// On false, the caller must stop drawing: no writable buffer is retained.
+bool present();
 // Scanout diagnostics. Counters are sampled without blocking the VSYNC ISR.
 // Compare frames before/after a storage operation; maxGapUs is since boot.
 struct DisplayStats {
   bool ready = false;
   uint32_t frames = 0, maxGapUs = 0, lastGapUs = 0, currentGapUs = 0;
+  uint32_t presentCalls = 0, swaps = 0, timeouts = 0;
+  uint32_t underflows = 0, descErrors = 0, missingEof = 0, lastDmaRaw = 0;
 };
 DisplayStats displayStats();
 // Backlight duty in percent, clamped to 5..100. May be set before begin();

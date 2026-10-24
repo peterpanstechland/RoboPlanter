@@ -70,7 +70,7 @@ Copy-Item firmware/indicator/include/local_config.example.h firmware/indicator/i
 - `firmware/xiao/.pio/build/xiao_robot_board/firmware.bin`
 - `firmware/indicator/.pio/build/sensecap_indicator/firmware.bin`
 
-构建脚本不会烧录。Indicator 已于 2026-10-24 经 ESP32 的 CH340 接口完成首次刷写，刷前保存并校验了本地 8 MB 备份。用户反馈首版频闪，随后确认旧界面的 Canvas 修复版“频闪消失，触摸正常”。Worker 像素第一版继续使用离屏 Canvas，已构建并上传校验成功；见[第一版记录](docs/deployment/indicator-worker-ui.md)。中英文、Wi-Fi 和亮度设置 v2 也已刷写，用户随后确认字体、背光和 Wi-Fi 扫描正常，详见[设置版本记录](docs/deployment/indicator-settings-ui.md)。养成 v3 初版收到偶发闪屏反馈；固定植物位置并修订刷新中断后的版本已刷入，96 次存档压力测试通过，实屏稳定性仍待用户确认；见[养成部署记录](docs/deployment/indicator-garden-ui.md)和[玩法说明](docs/indicator-garden.md)。RP2040 原固件未操作，XIAO 尚未刷写；备份与恢复方法见[首次刷写记录](docs/deployment/indicator-first-flash.md)。
+构建脚本不会烧录。Indicator 已于 2026-10-24 经 ESP32 的 CH340 接口完成首次刷写，刷前保存并校验了本地 8 MB 备份。用户反馈首版频闪，随后确认旧界面的 Canvas 修复版“频闪消失，触摸正常”。Worker 像素第一版已构建并上传校验成功；见[第一版记录](docs/deployment/indicator-worker-ui.md)。中英文、Wi-Fi 和亮度设置 v2 也已刷写，用户随后确认三项正常，详见[设置版本记录](docs/deployment/indicator-settings-ui.md)。养成 v3 在第一轮刷新中断修订后仍收到偶发闪屏反馈；当前已刷入 VSYNC 双缓冲版本，完成 96 次帧交换与存档读回，实屏效果仍待用户确认，见[双缓冲修订记录](docs/deployment/indicator-vsync-double-buffer.md)、[养成历史记录](docs/deployment/indicator-garden-ui.md)和[玩法说明](docs/indicator-garden.md)。RP2040 原固件未操作，XIAO 尚未刷写；备份与恢复方法见[首次刷写记录](docs/deployment/indicator-first-flash.md)。
 
 ## 本机验证
 
@@ -104,4 +104,4 @@ python -m unittest integrations.cloud.test_server integrations.cloud.test_mqtt -
 
 测试覆盖泵超时与计时回绕、重复请求与参数冲突、缓存满时停泵、默认禁用、打印互斥，以及客户端鉴权、拒绝重定向、失败动作不重发、MCP 工具调用和迟到回复不覆盖已完成结果。
 
-旧界面的 Canvas 修复版已有用户“频闪消失，触摸正常”反馈；Worker 第一版也已上传校验，启动观察未见 panic。v2 的字体、背光和 Wi-Fi 扫描已得到用户确认；这些历史结果不自动算作 v3 养成、存档和长时间稳定性的验收。动画更新间隔为 100 ms，上限约 10 fps，实际速度还受绘制和整帧复制耗时影响。当前为空相册，XIAO 尚未刷写，真实花盆连接、传感器与执行器尚未验收。具体传感器 SKU、12V 负载电流、打印机协议和 TTL 电平仍需实物检查。BLE 入站长命令依赖手机端 MTU/长写支持，不能据编译或 Indicator 启动成功认定 YOYO 链路已打通。NFC 贴按无源入口标签设计，不占 GPIO；直达指定 YOYO Skill 的链接尚未验证。
+旧界面的 Canvas 修复版已有用户“频闪消失，触摸正常”反馈；Worker 第一版也已上传校验，启动观察未见 panic。v2 的字体、背光和 Wi-Fi 扫描已得到用户确认；这些历史结果不自动算作 v3 养成、存档和长时间稳定性的验收。动画更新间隔为 100 ms，上限约 10 fps，实际速度还受绘制和等待帧边界耗时影响。当前双缓冲实现不再整帧复制到正在显示的缓冲区。当前为空相册，XIAO 尚未刷写，真实花盆连接、传感器与执行器尚未验收。具体传感器 SKU、12V 负载电流、打印机协议和 TTL 电平仍需实物检查。BLE 入站长命令依赖手机端 MTU/长写支持，不能据编译或 Indicator 启动成功认定 YOYO 链路已打通。NFC 贴按无源入口标签设计，不占 GPIO；直达指定 YOYO Skill 的链接尚未验证。

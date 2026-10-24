@@ -62,6 +62,10 @@ Another 84 pixel assertions cover fixed plant/pot anchors across all four specie
 and five stages, plus a visible blink spanning multiple nominal frames without a
 second short blink. Eighteen bilingual settings images remain pixel-identical to
 the v2 preview, and the Chinese/English garden layouts were visually reviewed.
+Six additional checks inject one failed frame handoff into the production loop:
+rendering becomes unavailable, the failure is logged once, and subsequent loop
+calls yield without accessing, changing or presenting the framebuffer. This
+tests the main-loop failure policy; the host does not emulate VSYNC or DMA.
 Only the isolated interaction phase enables a counting submit stub; the render
 phase throws if any action is attempted. Network/device implementations remain
 unexecuted, and no fake sensor values are placed in screenshots or firmware.
@@ -83,6 +87,7 @@ These are native code captures, not photographs of the physical display. They
 cannot verify RGB scanout timing, PSRAM/DMA flicker, backlight, real touch input,
 network behavior or device frame rate. Re-run after UI or generated-font edits.
 `-CompileOnly` checks the native harness build without generating captures.
-The v3 firmware was separately uploaded to COM13 and produced a normal 20-second
-boot capture; the user's physical garden-game experience is still pending.
-See [the v3 deployment record](../../docs/deployment/indicator-garden-ui.md).
+The v3 firmware has separate device checks on COM13. Earlier revisions still
+received occasional-flicker feedback; host screenshots cannot settle that issue.
+See the [current double-buffer deployment record](../../docs/deployment/indicator-vsync-double-buffer.md)
+and [earlier v3 record](../../docs/deployment/indicator-garden-ui.md).

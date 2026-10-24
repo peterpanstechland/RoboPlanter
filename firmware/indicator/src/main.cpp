@@ -322,7 +322,12 @@ void draw(const State &s,uint32_t now) {
     case ui::Page::Photos:photosPage(s,now);break;
     case ui::Page::Focus:focusPage(s,now);break;
   }
-  indicator::present();
+  if(!indicator::present()) {
+    // A timed-out handoff must never let the next loop draw into a buffer
+    // whose ownership is uncertain. Keep the last scanout frame intact.
+    displayReady=false;
+    Serial.println("Indicator frame handoff failed; rendering stopped.");
+  }
 }
 void tickCompanion(uint32_t now) {
   garden_store::service(now);
@@ -412,7 +417,7 @@ void setup() {
   if(!displayReady){Serial.println("Indicator LCD init failed: check OPI PSRAM / original ST7701 panel.");return;}
   clientReady=planter::begin();
   Serial.printf("Indicator init: display=%s touch=%s client_task=%s preferences=%s\n",displayReady?"ready":"failed",indicator::touchReady()?"ready":"not_found",clientReady?"ready":"failed",prefsReady?"ready":"unavailable");
-  Serial.println("Indicator renderer: offscreen canvas -> complete frame copy.");
+  Serial.println("Indicator renderer: two framebuffers -> VSYNC swap; no full-frame copy.");
   Serial.println("Indicator UI: Worker Smart Planter v3 / growing plant spirit / zh-en settings.");
   Serial.printf("Indicator garden: storage=%s species=%u stage=%u\n",gardenReady?"ready":"unavailable",
     static_cast<unsigned>(garden_store::model().selected()),static_cast<unsigned>(garden_store::model().stage()));
@@ -421,7 +426,7 @@ void setup() {
     indicator::brightness(),device_settings::wifiState().persistenceAvailable?"ready":"unavailable");
   draw(planter::snapshot(),millis());
 #if defined(ARDUINO) && defined(RP_LCD_FLASH_STRESS)
-  lcd_diagnostics::runFlashStress();
+  if(displayReady && !lcd_diagnostics::runFlashStress())displayReady=false;
 #endif
 }
 void loop() {
