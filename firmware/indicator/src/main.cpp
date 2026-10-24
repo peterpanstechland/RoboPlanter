@@ -249,7 +249,7 @@ void draw(const State &s,uint32_t now) {
     case ui::Page::Photos:photosPage(s,now);break;
     case ui::Page::Focus:focusPage(s,now);break;
   }
-  indicator::display().flush();
+  indicator::present();
 }
 void handle(ui::Gesture gesture,const State &s,uint32_t now) {
   if(gesture==ui::Gesture::None)return;
@@ -291,11 +291,18 @@ void handle(ui::Gesture gesture,const State &s,uint32_t now) {
 
 void setup() {
   Serial.begin(115200); // CH340 UART0 only; leave RP2040 UART19/20 untouched.
+  Serial.printf("RoboPlanter Indicator boot: flash=%lu psram=%lu\n",
+      static_cast<unsigned long>(ESP.getFlashChipSize()),
+      static_cast<unsigned long>(ESP.getPsramSize()));
   prefsReady=preferences.begin("rp-ui",false);
   if(prefsReady)model.selectTheme(preferences.getUChar("theme",0)%ui_theme::kCount);
   displayReady=indicator::begin();
   if(!displayReady){Serial.println("Indicator LCD init failed: check OPI PSRAM / original ST7701 panel.");return;}
   clientReady=planter::begin();
+  Serial.printf("Indicator init: display=%s touch=%s client_task=%s preferences=%s\n",
+      displayReady?"ready":"failed", indicator::touchReady()?"ready":"not_found",
+      clientReady?"ready":"failed", prefsReady?"ready":"unavailable");
+  Serial.println("Indicator renderer: offscreen canvas -> complete frame copy.");
   Serial.println("RoboPlanter: release-only UI; decorative expressions; independent local focus timer.");
   draw(planter::snapshot(),millis());
 }

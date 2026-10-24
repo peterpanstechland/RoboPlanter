@@ -16,6 +16,7 @@
 | 云部署、鉴权与真实 broker 验证记录 | [integrations/cloud/INFRA-DEPLOYMENT.md](integrations/cloud/INFRA-DEPLOYMENT.md) |
 | XIAO 固件、传感器与驱动开关 | [firmware/xiao/README.md](firmware/xiao/README.md) |
 | Indicator 屏幕、触摸与网络客户端 | [firmware/indicator/README.md](firmware/indicator/README.md) |
+| Indicator 首次刷写、启动结果与本地备份恢复 | [docs/deployment/indicator-first-flash.md](docs/deployment/indicator-first-flash.md) |
 | 工位陪伴 UI、八主题、照片与番茄钟 | [docs/indicator-ui.md](docs/indicator-ui.md) |
 | 可交互接线图与主题界面预览 | [docs/previews/README.md](docs/previews/README.md) |
 | 引脚、电源、Grove 转接与首次联调 | [docs/wiring.md](docs/wiring.md) |
@@ -64,7 +65,7 @@ Copy-Item firmware/indicator/include/local_config.example.h firmware/indicator/i
 - `firmware/xiao/.pio/build/xiao_robot_board/firmware.bin`
 - `firmware/indicator/.pio/build/sensecap_indicator/firmware.bin`
 
-构建不会烧录。首次上电先只验证两块板的 USB 供电、网络和显示，再逐项连接外设。Indicator 目标是 ESP32 的 CH340 接口，保留 RP2040 原固件；烧录前保留原厂程序恢复方式。完整步骤与电源要求见接线文档。
+构建脚本不会烧录。Indicator 已于 2026-10-24 经 ESP32 的 CH340 接口完成首次刷写，刷前保存并校验了本地 8 MB 备份。用户反馈首版“显示有频闪，触摸正常”；随后已刷入离屏 Canvas 修复版，启动正常，用户复测确认“频闪消失，触摸正常”。RP2040 原固件未操作，XIAO 尚未刷写。备份与恢复方法见[首次刷写记录](docs/deployment/indicator-first-flash.md)，接线与电源要求见接线文档。
 
 ## 本机验证
 
@@ -75,9 +76,9 @@ Copy-Item firmware/indicator/include/local_config.example.h firmware/indicator/i
 | 默认配置构建 | 静态 RAM | 程序 Flash / 分区容量 |
 | --- | --- | --- |
 | XIAO Robot Board | 78,172 B / 327,680 B（23.9%） | 1,361,145 B / 6,291,456 B（21.6%） |
-| SenseCAP Indicator | 46,064 B / 327,680 B（14.1%） | 860,833 B / 3,342,336 B（25.8%） |
+| SenseCAP Indicator（离屏 Canvas） | 46,152 B / 327,680 B（14.1%） | 865,293 B / 3,342,336 B（25.9%） |
 
-以上为编译器报告，不包含运行中的动态堆、网络缓冲或屏幕帧缓冲峰值。构建日志保存于本机 `tmp/xiao-build.log` 与 `tmp/indicator-ui-build.log`。默认 XIAO 构建也会解析所有可选驱动源码，但不代表外设已经通过实物验收。
+以上为编译器报告，不包含运行中的动态堆、网络缓冲或屏幕帧缓冲峰值。Indicator 新版在扫描缓冲之外增加 460,800 B 的 PSRAM 离屏画布，应用镜像为 865,664 B。XIAO 构建日志保存于本机 `tmp/xiao-build.log`；Indicator 最新构建/上传日志为 `tmp/indicator-buffered-flash-20261024.log`，首版上传日志为 `tmp/indicator-flash-20261024.log`。默认 XIAO 构建也会解析所有可选驱动源码，但不代表外设已经通过实物验收。
 
 ```powershell
 # 需要 Visual Studio C++ Build Tools；测试使用本机 C++ 编译器，不连接设备。
@@ -93,4 +94,4 @@ python -m unittest integrations.cloud.test_server integrations.cloud.test_mqtt -
 
 测试覆盖泵超时与计时回绕、重复请求与参数冲突、缓存满时停泵、默认禁用、打印互斥，以及客户端鉴权、拒绝重定向、失败动作不重发、MCP 工具调用和迟到回复不覆盖已完成结果。
 
-尚未烧录或进行真机测量。显示批次/触摸方向、具体传感器 SKU、12V 负载电流、打印机协议和 TTL 电平仍需实物验收。BLE 入站长命令依赖手机端 MTU/长写支持，不能据编译通过认定 YOYO 链路已打通。NFC 贴按无源入口标签设计，不占 GPIO；直达指定 YOYO Skill 的链接尚未验证。
+Indicator 首版已通过上传哈希校验，20 秒串口观察报告 8 MB Flash、约 8 MB PSRAM，以及 `display=ready touch=ready client_task=ready preferences=ready`，观察窗口内未见 panic；用户确认触摸正常，但显示有频闪。随后将逐步绘制改为离屏 Canvas 完成后整帧复制，并已重新刷写成功；新版启动日志四项仍为 `ready`，含 `offscreen canvas -> complete frame copy`。用户复测确认“频闪消失，触摸正常”；尚未完成长时间稳定性与逐项功能验收。当前为空相册、占位网络配置；XIAO 尚未刷写，真实花盆连接、传感器与执行器尚未验收。具体传感器 SKU、12V 负载电流、打印机协议和 TTL 电平仍需实物检查。BLE 入站长命令依赖手机端 MTU/长写支持，不能据编译或 Indicator 启动成功认定 YOYO 链路已打通。NFC 贴按无源入口标签设计，不占 GPIO；直达指定 YOYO Skill 的链接尚未验证。

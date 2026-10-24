@@ -55,9 +55,13 @@ Arduino_ESP32RGBPanel panel(
     10, 9, 8, 7, 6, 5,
     15, 14, 13, 12, 11,
     1, 10, 8, 50, 1, 10, 8, 20);
-Arduino_RGB_Display gfx(480, 480, &panel, 0, false, &spi, GFX_NOT_DEFINED,
+Arduino_RGB_Display scanout(480, 480, &panel, 0, false, &spi, GFX_NOT_DEFINED,
                        st7701_type1_init_operations,
                        sizeof(st7701_type1_init_operations));
+// RGB DMA keeps scanning its framebuffer even with auto_flush=false. Drawing
+// the background directly there exposes each intermediate clear/paint step.
+// Keep composition in a separate PSRAM buffer and copy only a complete frame.
+Arduino_Canvas canvas(480, 480, &scanout);
 
 // The Seeed Arduino tutorial's full example adds these two orientation bits
 // to Arduino_GFX's type1 table and maps touch as (479-x, 479-y).
@@ -88,11 +92,11 @@ bool begin() {
   delay(10);
   setOutputs(kLcdReset | kTouchReset, true);
   delay(120);
-  if (!gfx.begin(12000000L)) return false;
+  if (!canvas.begin(12000000L)) return false;
   spi.batchOperation(kOrientation, sizeof(kOrientation));
   if (!i2cHealthy) return false;
-  gfx.fillScreen(0);
-  gfx.flush();
+  canvas.fillScreen(0);
+  present();
   digitalWrite(45, HIGH);
   uint8_t probe;
   touchOk = readBytes(kTouch, 0x02, &probe, 1);
@@ -106,7 +110,12 @@ bool begin() {
   }
   return true;
 }
-Arduino_RGB_Display &display() { return gfx; }
+Arduino_GFX &display() { return canvas; }
+void present() {
+  canvas.flush();
+  // Arduino_Canvas copies to its output but does not call output.flush().
+  scanout.flush();
+}
 bool touchReady() { return touchOk; }
 TouchStatus readTouchStatus(int16_t &x, int16_t &y) {
   if (!touchOk) return TouchStatus::Invalid;
