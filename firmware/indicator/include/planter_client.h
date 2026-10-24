@@ -6,6 +6,7 @@ struct Reading { float value = 0; bool valid = false; };
 struct State {
   bool received = false, wifi = false;
   uint32_t receivedMs = 0, sampleAgeMs = 0;
+  uint32_t networkRevision = 0; // A new Wi-Fi selection invalidates old capability data.
   bool ageKnown = false;
   char deviceId[49] = {}, networkError[80] = {};
   Reading soilRaw, soilPercent, airRaw, uvRaw, temperature, humidity;

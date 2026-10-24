@@ -20,6 +20,9 @@ void face(Arduino_GFX &g, uint8_t id, int16_t cx, int16_t cy,
 // Monochrome 16x16 pixel glyph, scaled into a square with top-left x/y.
 void icon(Arduino_GFX &g, Icon kind, int16_t x, int16_t y,
           int16_t size, uint16_t color);
-// Home props: x28..124 and x356..452, y286..355; desk line at y355.
+// Water/Temp use a coloured interior and a separate outline; others stay mono.
+void accentIcon(Arduino_GFX &g, Icon kind, int16_t x, int16_t y,
+                int16_t size, uint16_t outlineColor, uint16_t fillColor);
+// Home props: cup x67..126, books x340..418; desk line y355..356.
 void deskScene(Arduino_GFX &g, uint8_t id, uint32_t now);
 }

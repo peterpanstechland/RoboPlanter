@@ -1,5 +1,6 @@
 #include "indicator_board.h"
 #include <Wire.h>
+#include <esp32-hal-ledc.h>
 
 // Original SenseCAP Indicator ST7701 panel. Pin facts and register mapping:
 // Seeed-Solution/SenseCAP_Indicator_ESP32 @77edb8d2, see README sources.
@@ -11,6 +12,14 @@ constexpr uint8_t kCs = 1U << 4;
 constexpr uint8_t kLcdReset = 1U << 5;
 constexpr uint8_t kTouchIrq = 1U << 6;
 constexpr uint8_t kTouchReset = 1U << 7;
+// GPIO45 is the active-high LCD backlight, independent of RGB DMA timing.
+// Arduino-ESP32 2.0.17 LEDC API; channel 0 is reserved for this backlight.
+constexpr uint8_t kBacklightPin = 45;
+constexpr uint8_t kBacklightChannel = 0;
+constexpr uint32_t kBacklightHz = 5000;
+constexpr uint8_t kBacklightBits = 8;
+uint8_t backlightPercent = 100;
+bool backlightReady = false;
 uint8_t outputs = 0;
 bool i2cHealthy = true;
 bool touchOk = false;
@@ -76,8 +85,8 @@ const uint8_t kOrientation[] = {
 
 namespace indicator {
 bool begin() {
-  pinMode(45, OUTPUT);
-  digitalWrite(45, LOW);
+  pinMode(kBacklightPin, OUTPUT);
+  digitalWrite(kBacklightPin, LOW);
   if (!psramFound()) return false;
   Wire.begin(39, 40, 400000);
   Wire.setTimeOut(20);
@@ -97,7 +106,11 @@ bool begin() {
   if (!i2cHealthy) return false;
   canvas.fillScreen(0);
   present();
-  digitalWrite(45, HIGH);
+  if (ledcSetup(kBacklightChannel, kBacklightHz, kBacklightBits) == 0) return false;
+  ledcWrite(kBacklightChannel, 0);
+  ledcAttachPin(kBacklightPin, kBacklightChannel);
+  backlightReady = true;
+  setBrightness(backlightPercent);
   uint8_t probe;
   touchOk = readBytes(kTouch, 0x02, &probe, 1);
   // FT5x06 values from Seeed's ft5x06_init; no address scanning/fallback.
@@ -116,6 +129,15 @@ void present() {
   // Arduino_Canvas copies to its output but does not call output.flush().
   scanout.flush();
 }
+void setBrightness(uint8_t percent) {
+  backlightPercent = percent < 5 ? 5 : (percent > 100 ? 100 : percent);
+  if (backlightReady) {
+    // Round to nearest 8-bit duty; the core maps 255 to constant HIGH.
+    ledcWrite(kBacklightChannel,
+              (static_cast<uint32_t>(backlightPercent) * 255U + 50U) / 100U);
+  }
+}
+uint8_t brightness() { return backlightPercent; }
 bool touchReady() { return touchOk; }
 TouchStatus readTouchStatus(int16_t &x, int16_t &y) {
   if (!touchOk) return TouchStatus::Invalid;

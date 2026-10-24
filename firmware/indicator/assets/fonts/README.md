@@ -1,6 +1,6 @@
 # RoboPlanter Indicator bitmap font
 
-`include/ui_glyphs.h` is a generated 16-pixel monochrome subset of **Noto Sans SC Regular** from the official [Noto CJK repository](https://github.com/notofonts/noto-cjk). The font is licensed under the **SIL Open Font License 1.1**; the complete upstream license is preserved in `OFL.txt`.
+`include/ui_glyphs.h` contains monochrome subsets independently rasterized at **16, 24, 32, 48 and 64 pixels** from **Noto Sans SC Regular**, from the official [Noto CJK repository](https://github.com/notofonts/noto-cjk). Each size contains the same character set, with cropped bitmap bounds and offsets that preserve descenders and negative bearings. Larger text does not scale a 16-pixel bitmap. The font is licensed under the **SIL Open Font License 1.1**; the complete upstream license is preserved in `OFL.txt`.
 
 Original font copyright: **© 2014–2021 Adobe (http://www.adobe.com/).** Embedded source version: **2.004**. These values were read from the source font's OpenType name table.
 

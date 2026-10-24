@@ -1,11 +1,15 @@
 param(
   [string]$Python = '',
-  [string]$OutputDirectory = ''
+  [string]$OutputDirectory = '',
+  [switch]$CompileOnly
 )
 $ErrorActionPreference = 'Stop'
 $rpRoot = Split-Path -Parent $PSScriptRoot
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $rpRoot 'build\indicator-preview' }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $rpRoot 'build\indicator-preview-v2' }
 $rpOutput = [System.IO.Path]::GetFullPath($OutputDirectory)
+if ($rpOutput.TrimEnd('\') -ieq (Join-Path $rpRoot 'build\indicator-preview')) {
+  throw 'The deployed v1 preview is preserved; choose build/indicator-preview-v2.'
+}
 $rpBuild = Join-Path $rpOutput 'native-build'
 $rpFrames = Join-Path $rpOutput 'frames'
 New-Item -ItemType Directory -Path $rpBuild, $rpFrames -Force | Out-Null
@@ -26,6 +30,7 @@ $rpInputs = @($rpHarness) + @(Get-ChildItem -LiteralPath $rpSource, $rpInclude, 
 $rpBefore = @{}
 foreach ($rpInput in $rpInputs) { $rpBefore[$rpInput] = (Get-FileHash -LiteralPath $rpInput -Algorithm SHA256).Hash }
 $rpBatch = Join-Path $rpBuild 'render.cmd'
+$rpRenderCommand = if ($CompileOnly) { '' } else { 'indicator_render.exe "' + $rpFrames + '"' }
 $rpBatchContent = @"
 @echo off
 call "$rpDeveloperCmd" -no_logo -arch=x64
@@ -33,7 +38,7 @@ if errorlevel 1 exit /b 1
 cd /d "$rpBuild"
 cl.exe /nologo /std:c++17 /EHsc /utf-8 /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /I"$rpStub" /I"$rpInclude" /I"$rpLibrary" "$rpHarness" /Fe:indicator_render.exe
 if errorlevel 1 exit /b 1
-indicator_render.exe "$rpFrames"
+$rpRenderCommand
 "@
 Set-Content -LiteralPath $rpBatch -Value $rpBatchContent -Encoding utf8
 & $env:ComSpec /d /c $rpBatch
@@ -43,6 +48,7 @@ foreach ($rpInput in $rpInputs) {
     throw "Source changed during rendering; rerun after edits finish: $rpInput"
   }
 }
+if ($CompileOnly) { Write-Output "Native preview compiler check passed: $rpBuild"; return }
 if (-not $Python) {
   $rpBundledPython = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
   if (Test-Path -LiteralPath $rpBundledPython) { $Python = $rpBundledPython }

@@ -1,5 +1,6 @@
 #include "planter_client.h"
 #include "config.h"
+#include "device_settings.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -12,7 +13,7 @@
 
 namespace {
 using namespace planter;
-struct Command { Action action; bool on; char id[33]; };
+struct Command { Action action; bool on; char id[33]; uint32_t networkRevision; };
 State shared;
 SemaphoreHandle_t lock = nullptr;
 QueueHandle_t commands = nullptr, stops = nullptr;
@@ -29,7 +30,7 @@ bool terminal(const char *status) {
 void networkError(const char *message) {
   xSemaphoreTake(lock, portMAX_DELAY);
   copy(shared.networkError, message);
-  shared.wifi = WiFi.status() == WL_CONNECTED;
+  shared.wifi = device_settings::planterNetworkReady();
   xSemaphoreGive(lock);
 }
 void commandResult(const char *id, const char *status, const char *error,
@@ -55,6 +56,9 @@ Reading reading(JsonVariantConst object, const char *field) {
   return out;
 }
 bool configureHttp(HTTPClient &http, WiFiClient &client, const char *path) {
+  // A user-selected office/cafe network may have an unrelated 192.168.4.1.
+  // Never disclose the planter token there merely because Wi-Fi is connected.
+  if (!device_settings::planterNetworkReady()) return false;
   http.setConnectTimeout(kHttpTimeoutMs);
   http.setTimeout(kHttpTimeoutMs);
   http.setReuse(false);
@@ -65,6 +69,7 @@ bool configureHttp(HTTPClient &http, WiFiClient &client, const char *path) {
 }
 
 void pollState() {
+  const uint32_t requestNetwork = device_settings::networkRevision();
   WiFiClient client;
   HTTPClient http;
   if (!configureHttp(http, client, "/api/v1/state")) {
@@ -83,6 +88,7 @@ void pollState() {
   }
   const String body = http.getString();
   http.end();
+  if (requestNetwork != device_settings::networkRevision()) return;
   StaticJsonDocument<3072> doc;
   const auto error = deserializeJson(doc, body);
   if (error || !doc["schema_version"].is<int>() || doc["schema_version"].as<int>() != 1 ||
@@ -92,6 +98,7 @@ void pollState() {
   State next;
   next.received = next.wifi = true;
   next.receivedMs = millis();
+  next.networkRevision = requestNetwork;
   copy(next.deviceId, doc["device_id"]);
   next.ageKnown = doc["sample_age_ms"].is<uint32_t>();
   if (next.ageKnown) next.sampleAgeMs = doc["sample_age_ms"].as<uint32_t>();
@@ -204,8 +211,9 @@ void pollCommandResult() {
 }
 
 void sendCommand(const Command &command) {
-  if (WiFi.status() != WL_CONNECTED) {
-    commandResult(command.id, "not_sent", "Wi-Fi offline; no retry", false); return;
+  if (WiFi.status() != WL_CONNECTED || !device_settings::planterNetworkReady() ||
+      command.networkRevision != device_settings::networkRevision()) {
+    commandResult(command.id, "not_sent", "Planter network unavailable or changed; no retry", false); return;
   }
   // Recheck capability and freshness just before transmission.
   const State state = planter::snapshot();
@@ -261,36 +269,58 @@ void sendCommand(const Command &command) {
 }
 
 void networkTask(void *) {
-  WiFi.mode(WIFI_STA);
-  WiFi.persistent(false);
-  WiFi.setAutoReconnect(true);
-  WiFi.begin(PLANTER_WIFI_SSID, PLANTER_WIFI_PASSWORD);
-  uint32_t nextPoll = 0, lastConnect = millis();
+  uint32_t nextPoll = 0;
   for (;;) {
     Command command;
     // STOP has its own one-element queue and is serviced before other work.
     if (xQueueReceive(stops, &command, 0) == pdTRUE) {
       xQueueReset(commands);
       sendCommand(command);
+      // Keep settings from invalidating this STOP between enqueue and POST.
+      // Release on every result, including not_sent/unknown; never replay it.
+      device_settings::releaseNetworkAfterStop();
       nextPoll = 0;
-    } else if (xQueueReceive(commands, &command, 0) == pdTRUE) {
+    }
+    // Settings service owns the Wi-Fi API. Scanning, switching and connection
+    // timeout/retry handling never run in the display/touch task.
+    device_settings::service();
+    const uint32_t currentNetwork = device_settings::networkRevision();
+    const bool planterNetwork = device_settings::planterNetworkReady();
+    {
+      xSemaphoreTake(lock, portMAX_DELAY);
+      if (shared.networkRevision != currentNetwork) {
+        shared.networkRevision = currentNetwork;
+        shared.ageKnown = false;
+        shared.pumpKnown = shared.pumpEnabled = false;
+        shared.lightKnown = shared.lightEnabled = false;
+        shared.printerKnown = shared.printerEnabled = false;
+        if (shared.commandBlocked && !terminal(shared.commandStatus) &&
+            strcmp(shared.commandStatus, "queued") && strcmp(shared.commandStatus, "sending")) {
+          shared.uncertain = true;
+          copy(shared.commandStatus, "unknown");
+          copy(shared.commandError, "Wi-Fi changed; inspect planter; no retry");
+        }
+        nextPoll = 0;
+      }
+      shared.wifi = planterNetwork;
+      xSemaphoreGive(lock);
+    }
+    if (xQueueReceive(commands, &command, 0) == pdTRUE) {
       sendCommand(command);
       nextPoll = 0;
     }
     const uint32_t now = millis();
-    if (WiFi.status() == WL_CONNECTED) {
+    if (planterNetwork && WiFi.status() == WL_CONNECTED) {
       if (!nextPoll || static_cast<int32_t>(now - nextPoll) >= 0) {
         pollState();
         pollCommandResult();
         nextPoll = millis() + kPollIntervalMs;
       }
     } else {
-      networkError("Wi-Fi offline - check SSID / power");
-      if (now - lastConnect > 10000) {
-        WiFi.disconnect();
-        WiFi.begin(PLANTER_WIFI_SSID, PLANTER_WIFI_PASSWORD);
-        lastConnect = now;
-      }
+      const auto wifi = device_settings::wifiState();
+      networkError(wifi.phase == device_settings::WifiPhase::Connected ?
+                   "Wi-Fi connected; configured planter network not selected" :
+                   "Planter Wi-Fi offline; open Wi-Fi settings");
     }
     vTaskDelay(pdMS_TO_TICKS(25));
   }
@@ -299,12 +329,20 @@ void networkTask(void *) {
 
 namespace planter {
 bool begin() {
+  if (!device_settings::begin()) return false;
   lock = xSemaphoreCreateMutex();
   commands = xQueueCreate(1, sizeof(Command));
   stops = xQueueCreate(1, sizeof(Command));
   bootNonce = esp_random();
-  if (!lock || !commands || !stops) return false;
-  return xTaskCreatePinnedToCore(networkTask, "planter-http", 12288, nullptr, 1, nullptr, 0) == pdPASS;
+  if (lock && commands && stops &&
+      xTaskCreatePinnedToCore(networkTask, "planter-http", 12288, nullptr, 1, nullptr, 0) == pdPASS) return true;
+  // No worker exists, so requests must not remain accepted/Connecting forever.
+  if (stops) vQueueDelete(stops);
+  if (commands) vQueueDelete(commands);
+  if (lock) vSemaphoreDelete(lock);
+  stops = commands = nullptr; lock = nullptr;
+  device_settings::workerStartupFailed();
+  return false;
 }
 State snapshot() {
   State out;
@@ -312,10 +350,17 @@ State snapshot() {
   xSemaphoreTake(lock, portMAX_DELAY);
   out = shared;
   xSemaphoreGive(lock);
+  // A Wi-Fi selection may be queued while the worker is awaiting HTTP. Disable
+  // controls immediately; do not reuse the previous network's capabilities.
+  if (out.networkRevision != device_settings::networkRevision() || !device_settings::planterNetworkReady()) {
+    out.wifi = false;
+    out.pumpEnabled = out.lightEnabled = out.printerEnabled = false;
+  }
   return out;
 }
 bool fresh(const State &state, uint32_t now) {
   return state.received && state.wifi && state.ageKnown &&
+         state.networkRevision == device_settings::networkRevision() && device_settings::planterNetworkReady() &&
          static_cast<uint64_t>(now - state.receivedMs) + state.sampleAgeMs <= kStaleMs;
 }
 bool submit(Action action, bool lightOn) {
@@ -324,10 +369,18 @@ bool submit(Action action, bool lightOn) {
   const bool stop = action == Action::StopWater;
   const bool enabled = (action == Action::Water || stop) ? shared.pumpEnabled :
                        action == Action::Light ? shared.lightEnabled : shared.printerEnabled;
-  if (!enabled || !shared.wifi || (!stop && (!fresh(shared, millis()) || shared.commandBlocked))) {
+  if (!enabled || !shared.wifi || shared.networkRevision != device_settings::networkRevision() ||
+      !device_settings::planterNetworkReady() || (!stop && (!fresh(shared, millis()) || shared.commandBlocked))) {
     xSemaphoreGive(lock); return false;
   }
-  Command command{action, lightOn, {}};
+  Command command{action, lightOn, {}, device_settings::networkRevision()};
+  // Acquire under the settings lock after the checks above: a concurrent UI
+  // network change either wins first (STOP rejected) or waits for this STOP.
+  // Client -> settings is the only nested lock order. Duplicate pending STOPs
+  // are rejected so one reservation always belongs to exactly one queue item.
+  if (stop && !device_settings::reserveNetworkForStop(command.networkRevision)) {
+    xSemaphoreGive(lock); return false;
+  }
   snprintf(command.id, sizeof(command.id), "screen-%08lx-%08lx",
            static_cast<unsigned long>(bootNonce), static_cast<unsigned long>(++sequence));
   const BaseType_t queued = stop ? xQueueOverwrite(stops, &command) : xQueueSend(commands, &command, 0);
@@ -339,6 +392,7 @@ bool submit(Action action, bool lightOn) {
     shared.uncertain = false;
     shared.commandStartedMs = millis();
   }
+  else if (stop) device_settings::releaseNetworkAfterStop();
   xSemaphoreGive(lock);
   return queued == pdTRUE;
 }
