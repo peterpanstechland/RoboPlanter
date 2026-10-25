@@ -53,3 +53,37 @@ SHA-256 034ef4588a63bb10dce491438dad95ff139c9044902a63463685543741e7188f
 GitHub Actions `40181805301` 的 Build Docusaurus 与 Deploy to GitHub Pages 均为 `success`。已在浏览器打开正式展示页与项目手册，确认标题、3D 渲染、导航与 11 篇目录存在。
 
 已从官网链接下载 `roboplanter-starter.zip`：580,783 字节，SHA-256 与上表相同，129 个 ZIP 成员完整性检查通过。Device Kit 的本地发布归档及清单哈希也已核对。浏览器下载过程中控制工具曾超时，但文件已落盘，随后由文件哈希完成确认；不把工具超时当作下载失败或成功的唯一依据。
+
+## WS2812 增量发布（2026-10-25）
+
+实现提交：`f4bfd9b`；长期运行相位补丁：`5ec394d`。公开教程现在共 12 篇（两个语言路径的正文仍均为中文）。
+
+- 固件四模式：solid、breath、chase、rainbow；默认关闭，旧开关命令兼容。
+- 灯帧独立 priority-1 任务，每 40 ms 更新；LED show 不持有泵控制器锁。亮度仍使用编译期限制；单灯 chase 退为 breath。
+- HTTP/BLE、CLI、本地 MCP、Device Kit 描述同步；BLE 查询维持 `L:enabled:on`。YOYO Skill 硬件门禁与云写禁用未改变。
+- 展示页加入五状态灯效预览，390px 下控件改为两列；预览及导出图仍是概念画面，不控制实体板。
+- 318 项控制器、13,453 项灯帧模型、99 项 Indicator UI 检查通过。灯帧模型 ASan/UBSan 通过，环境不支持的 LeakSanitizer 未开启。
+- MCP 21 项、CLI 11 项、灯效 bridge 6 项、Device Kit 15 项、结果校验 1 项、打包 5 项，共 59 项 Python 测试通过。MCP 使用隔离 Python 3.13.5 与项目固定依赖；传输测试只连接本机模拟设备。
+- 双语言 Docusaurus 全站构建通过。网页桌面/390px 布局、五种模式循环和控制台错误已检查。
+- 公开归档包含 130 个源文件与 3 个引导/清单文件；源文件逐项哈希校验通过。控制器与灯帧测试也已从归档独立解压编译执行。
+
+本次最终归档：`roboplanter-starter.zip`，597,163 字节，SHA-256 `96f9e01bbc022a77e8bc6ab07cc6f6f323fac2ac51c0dee13846f90c8df7db92`。Device Kit SHA-256 `ee76869371d48460a286d3b43581453696bdc1cb0683c6f6c28ee68915389b56`。
+
+站点更新 PR：[#50](https://github.com/peterpanstechland/peterpanstechland.github.io/pull/50)、[#51](https://github.com/peterpanstechland/peterpanstechland.github.io/pull/51)，分别合并为 `af2e5449aaf48cce25e96b3f564c3748c188656f`、`dc4c5ef1b26c7b6ecb02d2fbb201ddbf0954385f`。总览旧文案修正在 [#52](https://github.com/peterpanstechland/peterpanstechland.github.io/pull/52) 合并为 `b6c70139ff6e5fd782cc2c1043ec0ad7b1e6d721`；对应私有源码提交 `b3e7913`。最终 Pages 发布与新版 XIAO 编译结果另在下方记录。
+
+没有向实体设备烧录、没有实际灯光或供电测试，也没有在荣耀手机上执行 BLE 命令。软件模型测试不能作为灯光观感、实体帧率或泵截止延迟的证据。
+
+### 新版 XIAO 实际构建
+
+固定 `espressif32@6.12.0`、官方框架 `3.20017.241212+sha.dcc1105b`（Arduino 2.0.17），框架下载经过官方摘要核对。在两个不含私有配置的 `/tmp` 源码副本构建，源代码与仓库一致，两组均无 warning/error：
+
+- 默认全部禁用：RAM 79,740 / 327,680 B，Flash 1,361,633 / 6,291,456 B；应用镜像 1,362,000 B，SHA-256 `fea81fae2a4077d9451004d0bf674b4b050c688a5f78973255e8150c4f3b8f45`。
+- 仅编译灯外设启用、24 颗灯：RAM 79,788 B，Flash 1,365,281 B；应用镜像 1,365,648 B，SHA-256 `97189ea0751924ea68314b19b92a83f012c92afd570f87fd54ecdc2b013d0e2f`。ELF 包含 `applyLight` / `lightTask`，动作总开关仍为 0。不是可直接用于操作真实灯带的已配对固件。
+
+日志与机器可读检查记录保存在本机 `build/review/`，未进入公共归档。没有刷写设备或改变仓库默认配置。
+
+### 最终线上核验
+
+最终 GitHub Pages 工作流 [40183494004](https://github.com/peterpanstechland/peterpanstechland.github.io/actions/runs/40183494004) 的构建与部署均为 success，对应提交 `b6c70139ff6e5fd782cc2c1043ec0ad7b1e6d721`。
+
+已从正式站点打开灯带教程、操作彩虹预览，并确认总览显示当前四模式能力。通过官网的“下载完整源码复现包”链接下载最终 ZIP，实收 597,163 字节、133 个 ZIP 成员；归档 SHA-256 与上述最终清单相同，全部 130 个源文件的哈希再次通过。线上预览截图保存在本机 `build/review/ws2812-live.jpg`。本轮本地预览服务已停止。
