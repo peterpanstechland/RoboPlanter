@@ -17,7 +17,7 @@ YOYO 是主要的自然语言交互入口；XIAO 执行测量与本地控制；S
 | `get_planter_state` | 查询当次真实读数、数据有效性与功能是否启用。 |
 | `water` | 仅在用户明确要求给植物浇水后，发送有上限的毫秒时长和新的 `request_id`。 |
 | `stop_water` | 用户说停泵/停止浇水时优先调用，不等待养护分析。 |
-| `set_light` | 用户明确要求开关灯，或已约定的明确口令触发对应开关。首版只支持开/关。 |
+| `set_light` | 用户明确要求开关灯，或已约定的明确口令触发对应开关。本地适配器可选 `effect`：solid/breath/chase/rainbow，省略为 solid；关灯不传 effect。云端写操作仍禁用，未通过该入口验收时不可调用。 |
 | `print_note` | 用户明确要打印时发送 ASCII 文本；对话仍可用中文。 |
 | `get_action_result` | 根据原 `request_id` 查询动作结果，不重新执行动作。 |
 
