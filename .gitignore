@@ -1,4 +1,6 @@
 .tools/
+# Local Tripo CLI state; generated deliverables live under design/models/.
+.tripo/
 # Original vendor bundle remains local; it includes CAD and nested build caches.
 /reference/seeed-honor-robot-kit/
 **/.pio/
