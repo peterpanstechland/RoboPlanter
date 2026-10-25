@@ -10,6 +10,8 @@
 
 2026-10-25 新增 11 篇手册与可运行的离线 Device Kit：覆盖产品设计、硬件接线/备份/烧录、荣耀平台、BLE、设备契约、排障、验收、社媒拍摄与扩展路线。Device Kit 提供严格 profile 校验、设备登记、离线遥测检查和退役；它不读取令牌、不连接设备、不发送命令。当前固件源码仓库为私有；公开资料和下载不改变仓库可见性。
 
+正式站点已部署并核验，公开源码包来自逐文件白名单；版本、测试、哈希与部署结果见[发布记录](docs/deployment/competition-experience.md)。
+
 基于用户提供的 **Seeed XIAO ESP32-S3 Plus + XIAO Robot Board** 套件，配合 **SenseCAP Indicator D1** 的智能盆栽。**YOYO 独立 Skill 是主要的对话入口**：目标路径为 Skill → 官方 `ble_send_command` → XIAO BLE，再根据设备业务回包反馈真实结果。XIAO 负责传感器与执行器；Indicator 负责同步显示、触摸和本地操作，经 Wi-Fi HTTP 连接 XIAO。两块板分别通过 USB/5V 供电，无需互接 UART/I²C。
 
 独立 Skill 0.2.0已导入并保存荣耀平台草稿，尚未完成真机端到端验证。硬件令牌安全注入和手机工具长写未验证，当前 Skill 不发送硬件命令。已有 MCP/MQTT 保留为辅助接入，不是 Skill 主线的前置条件；A2A 不需要。
