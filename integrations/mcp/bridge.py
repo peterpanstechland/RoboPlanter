@@ -150,7 +150,8 @@ class PlanterBridge:
     @staticmethod
     def _verified_result(body: dict, request_id: str) -> bool:
         return (body.get("request_id") == request_id and type(body.get("ok")) is bool and
-                body.get("status") in ({"accepted"} | FINAL_STATUSES) and isinstance(body.get("error"), str) and
+                isinstance(body.get("status"), str) and
+                body["status"] in ({"accepted"} | FINAL_STATUSES) and isinstance(body.get("error"), str) and
                 body["ok"] == (body["status"] in ("accepted", "completed")))
 
     def _remember(self, request_id: str, fingerprint: str, result: dict[str, Any]) -> dict[str, Any]:

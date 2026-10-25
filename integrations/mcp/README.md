@@ -6,7 +6,9 @@
 本地 MCP 客户端 → 本机 Python MCP 服务 → XIAO HTTP API → 传感器 / 泵 / 灯 / 打印机
 ```
 
-目前实现和测试的是本地桥接。荣耀云端无法直接访问电脑的 `127.0.0.1` 或 XIAO SoftAP 的 `192.168.4.1`。本项目没有部署公网服务、配置穿透或完成荣耀平台端到端联调；在荣耀平台登记一个地址也不会自动解决可达性问题。后续若接云端，需要单独设计可达且经过认证的服务，以及设备到该服务的连接。`端 MCP` 是否能承载这个 Python 服务不能由其入口名称推定，Android SDK / 应用集成仍需验证。
+本目录实现和测试的是本地桥接。荣耀云端无法直接访问电脑的 `127.0.0.1` 或 XIAO SoftAP 的 `192.168.4.1`；在平台登记本地地址不会自动解决可达性问题。项目另有独立的[云 MCP/MQTT 辅助链路](../cloud/README.md)，已部署经过 HTTPS + Bearer 鉴权的公网入口，并完成工具发现、真实 broker 权限检查以及荣耀平台两个只读工具的调用。真实设备网关仍未接通，云端状态应返回不可用；浇水、停泵、灯光和打印四个云写工具均拒绝执行，不能据公网服务健康认定花盆在线。详见[云部署记录](../cloud/INFRA-DEPLOYMENT.md)与[平台记录](../../docs/deployment/honor-platform-status.md)。本地 HTTP 服务仍只监听回环地址，不是该公网入口。
+
+参赛主线为 [YOYO 独立 Skill → 官方 BLE 工具 → XIAO](../yoyo/README.md)，不以前述云桥为前置条件；手机与真实硬件的完整链路仍待验收。`端 MCP` 是否能承载本目录的 Python 服务不能由其入口名称推定，Android SDK / 应用集成仍需单独验证。
 
 ## 安装和运行
 
@@ -15,7 +17,8 @@
 在项目根目录执行：
 
 ```powershell
-$rpPython = 'C:\Users\peter\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
+py -3.11 -m venv .tools\mcp-venv
+$rpPython = Join-Path (Get-Location) '.tools\mcp-venv\Scripts\python.exe'
 .\integrations\mcp\install.ps1 -Python $rpPython
 ```
 
@@ -83,7 +86,7 @@ MCP 地址是 `http://127.0.0.1:8765/mcp`。没有公网监听选项；此 HTTP 
 在项目根目录执行：
 
 ```powershell
-& 'C:\Users\peter\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m unittest discover -s tests -p test_mcp_bridge.py -v
+& $rpPython -m unittest discover -s tests -p test_mcp_bridge.py -v
 ```
 
 当前 21 项测试通过。测试使用 `httpx.MockTransport` 或临时 `127.0.0.1` 模拟设备，不连接真实花盆。包括官方 SDK 的真实 stdio 握手、发现全部 6 个工具并逐一调用，参数拒绝、鉴权头、请求去重、超时未知、409 拒绝、404 未知、满缓存 STOP、完成结果竞态等。HTTP 模式目前检查了固定回环绑定与 DNS 防护配置，尚未做 Streamable HTTP 客户端端到端联调。stdio 子进程和模拟 HTTP 服务会在测试结束时关闭。
