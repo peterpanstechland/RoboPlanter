@@ -1,6 +1,6 @@
 # 阿里云 MCP 与 MQTT 查询链路
 
-2026-10-24 已部署云端服务；实际部署与验证结果见 [部署记录](INFRA-DEPLOYMENT.md)。当前为只读联调版本，设备尚未接入。六个 MCP 工具可发现，四个动作工具（包括停止浇水）固定返回 `rejected / cloud_writes_not_enabled / sent=false`。不要把云服务存活或 MQTT 登录成功当作真实花盆在线。
+2026-10-24 已部署云端服务；实际部署与验证结果见 [部署记录](INFRA-DEPLOYMENT.md)。当前为只读联调版本。2026-10-26 已用本机网关接入真实 XIAO 与 Indicator，公网 MCP 读取到有效、未校准的土壤 ADC 2516。六个 MCP 工具可发现，四个动作工具（包括停止浇水）固定返回 `rejected / cloud_writes_not_enabled / sent=false`。不要把云服务存活或 MQTT 登录成功当作真实花盆在线。
 
 ## 网络关系
 
@@ -44,7 +44,11 @@ ROBOPLANTER_TOKEN=<与固件一致的非默认设备令牌，至少16字符>
 python -m integrations.cloud.gateway
 ```
 
-程序不自动读取 `.env`；启动器需要先加载上述环境变量。设备令牌只保存在本地网关，云端只保存自己的 MQTT 账号及 MCP token。本工作区的 `.env.cloud`、`.env.gateway` 是私有部署凭据，不在 Git 中；`.env.gateway` 不包含尚未确定的设备令牌。
+程序不自动读取 `.env`；启动器需要先加载上述环境变量。设备令牌只保存在本地网关，云端只保存自己的 MQTT 账号及 MCP token。部署电脑上的 `.env.cloud`、`.env.gateway` 是私有部署凭据，不在 Git 中，不会自动随源码同步到其他电脑。办公室旧副本中的设备令牌尚未配置；本轮已更新当前电脑的私有 `.env.gateway`，匹配当前实际固件与 LAN 地址，并保留恢复到本机时的原副本。
+
+2026-10-26 当前测试电脑最初没有上述文件，用户确认原件在办公室电脑。随后通过项目既有跳板 SSH，从云端 `/opt/roboplanter/` 恢复这两个专用配置到本机，权限为 0600，无凭据输出；以本轮 XIAO 实际 LAN 地址和本地新令牌启动现有只读网关，未修改云端账号或 ACL。已验证 MQTT TLS 及经公网 MCP → MQTT → 本机网关 → XIAO → Indicator 的真实查询，读到 ADC 2516、`valid:true`、`calibrated:false`、`percent:null`，并且 `_bridge.fresh:true`、`transport:mqtt-read-only`、`cloud_writes_enabled:false`。
+
+网关目前仍依赖这台电脑；退出进程、休眠或离开当前局域网会使设备离线，不能将它描述为 Indicator 已原生上云。两板使用同局域网 HTTP 模式，`ROBOPLANTER_URL` 必须匹配实际 XIAO LAN 地址。目前 Broker ACL 没有传感器连续上报主题，也没有新增 `/telemetry` 权限。此次仅完成查询回包上云，未配置数据库历史存储。
 
 网关只允许 `get_state` 和 `get_result`，不提供任意 URL 或写命令转发。关闭网关后，云端在心跳过期或查询超时后返回不可用。设备缺失/HTTP 失败也返回不可用，绝不生成示例读数。
 

@@ -1,0 +1,12 @@
+{
+  "glb_version": 2,
+  "bytes": 44940768,
+  "sha256": "3080403faa426b65489624fec1ef4b1d21d20ca450cc6a10ec5f422baa025cf4",
+  "meshes": 1,
+  "materials": 1,
+  "images": 3,
+  "triangles": 1444258,
+  "extensionsUsed": [],
+  "external_image_uris": [],
+  "buffers": 1
+}

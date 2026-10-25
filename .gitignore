@@ -19,3 +19,11 @@ build/
 *.obj
 *.pdb
 *.ilk
+# Keep generation job/account records local; commit only reusable design assets.
+/design/models/**/tripo-out/
+/design/models/**/tripo-preflight.json
+/design/models/**/generation-result.json
+/design/models/**/input-preparation.json
+# The standalone model viewer needs its licensed, vendored runtime.
+!/design/models/roboplanter-all-in-one/viewer/vendor/three/build/
+!/design/models/roboplanter-all-in-one/viewer/vendor/three/build/three.module.js

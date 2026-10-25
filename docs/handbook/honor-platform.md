@@ -86,7 +86,7 @@ Windows 的同等命令是 `py -3 tools/package_honor_skill.py`，后两条也�
 
 ## 6. 真机测试：当前能测试什么
 
-点击 **真机测试** 后，以平台实际呈现的安装/测试说明为准。本文没有确认扫码、测试名单、分发包或安装按钮的具体形态，也没有验证后台权限、连接保活或唤起短语。遇到手机型号、MagicOS 或 YOYO 版本要求，应记录页面要求与实际设备版本。
+本次只读查看 **真机测试** 弹窗，已确认平台给出的流程：添加真机测试名单 → 发布真机测试 → 在荣耀手机登录名单内账号 → YOYO 侧边栏 → 技能商店 → 搜索并安装技能 → 点击 **立即体验**；也可以在 YOYO 主对话输入框手动输入 `@`，从列表选择该技能后输入内容。本文没有替用户添加账号或点击发布真机测试，也没有验证后台保活。用户已在自己的 Robot Phone 上确认能找到 RoboPlanter 并进入“立即体验”；这项用户回报只证明手机入口可用，不证明 BLE 或 NFC 已通过。
 
 当前 0.2.0 只测试以下闭环：
 
@@ -100,6 +100,76 @@ Windows 的同等命令是 `py -3 tools/package_honor_skill.py`，后两条也�
 8. “退出盆栽伙伴”调用 `skill_exit` 并交回 YOYO；重新进入后不重放之前提出的硬件动作。
 
 完整检查项见 [验收教程](acceptance.md)。这一阶段的成功表述是“当前草稿在某型号手机完成对话与退出测试”，不是“YOYO 已控制花盆”。
+
+### 6.1 Robot Phone 的 NFC 入口探索
+
+当前测试条件：用户提供可读写 NFC 贴，手机已安装 NFC Tools，Skill 可以“立即体验”。通过已授权 USB 的只读系统查询确认测试机为 APH-AN00、Android 16 / MagicOS 10.0.0，YOYO 主应用为 `com.hihonor.magicvoice`，当前安装版本 `90.10.34.064`。这些是该测试机的当前结果，不能当作所有荣耀机型的固定配置。
+
+本次区分了以下证据：
+
+- 用户在 Skill 详情/体验页未找到分享链接或添加桌面入口；不能由此断言其他版本也不支持。
+- 实际安装包的路由声明及 Package Manager 解析显示，`yoyo://com.hihonor.magicvoice/open` 可由 `ACTION_VIEW + BROWSABLE` 解析到 YOYO 启动组件。**这是普通链接解析结果，不是 NFC 唤起实测通过。**
+- 用户将上述地址写为普通自定义 URI 后碰贴，报告“有 NFC 提示，但未打开 YOYO”。该版本的已枚举路由没有 `NDEF_DISCOVERED / TECH_DISCOVERED / TAG_DISCOVERED`，分发方式不匹配是需要验证的原因之一；也须排查标签实际记录、系统提示及用户点击后的行为。
+- 改用“任务”路线后，用户报告只打开应用商店首页，没有具体应用。随后只读查询仍只发现 NFC Tools，未发现 NFC Tasks。缺少任务执行器是当前已确认的前置条件缺口；商店首页本身不能证明 YOYO 路由被执行，也不能据此断定具体跳转原因。
+- 该包没有解析到普通 `MAIN + LAUNCHER` 入口，不能保证仅写 Android Application Record（应用包名记录）就能打开 YOYO。
+- 后续只读查询已确认 NFC Tasks 安装，用户仍报告现有方式无法打开 YOYO。因此缺少执行器只是前一阶段的问题，不能作为持续失败的完整解释。YOYO 是系统集成助手，包含服务和对话界面；有可见界面不等于提供普通桌面应用的启动入口。
+- 已检查安装包声明：`com.hihonor.magicvoice.startup.MagicVoiceActivity` 为导出的界面组件，声明 `com.hihonor.magicvoice.action.VOICE_ASSISTANT` 动作和 `android.intent.category.DEFAULT`。本机 Package Manager 能解析这一动作到该组件。**仅已确认声明与解析，尚未确认第三方任务执行器能实际唤起；这也不是荣耀承诺稳定的公开接入协议。**
+- 已安装包还声明了 `/skill` 路径，但该路径对应哪种技能、需要什么参数，以及是否能选择当前独立 Skill 均未验收。**不把平台内部 ID、技术名或猜测的 query 参数拼成“已可用直达链接”。**
+
+第一条候选路线是使用 NFC 任务执行器，把 NFC 读取转换为普通的打开链接请求：
+
+```text
+可读写 NFC 实验贴
+  → NFC Tasks 执行一个打开 URI 的任务
+  → ACTION_VIEW：yoyo://com.hihonor.magicvoice/open
+  → YOYO 主对话
+  → 输入 @ 并从列表选择 RoboPlanter工位盆栽伙伴
+  → 发送“今天有点累，陪我一下”等对话内容
+```
+
+具体实验步骤：
+
+1. 在 NFC Tools 的 **任务** 页选择打开 URL/URI 类动作，填入 `yoyo://com.hihonor.magicvoice/open`，不要加 `https://`。菜单名称以实际版本为准。
+2. 先确认已安装 **NFC Tasks**，它与 NFC Tools 是两个应用。可由 [NFC Tasks 官方页](https://www.wakdev.com/en/apps/other-apps/nfc-tasks.html) 或 [官方 Google Play 页面](https://play.google.com/store/apps/details?id=com.wakdev.nfctasks) 获取，开发者为 wakdev。本次只读查询时手机只有 NFC Tools，未发现 NFC Tasks；本教程没有自行安装或授予手机权限。若碰贴只进商店首页，先补齐执行器并复测，不要将这一状态记录为 YOYO 唤起失败。
+3. 在实验贴中写入这一项任务；退出写卡应用，解锁手机后碰贴。测试阶段保持标签可改写，不做锁定。
+4. 分别记录系统有没有提示、执行器有没有接管、是否进入 YOYO、能否手动选择 RoboPlanter。这四项要分开，不能因手机响了一声就记成技能唤起成功。
+5. 只有上述打开任务通过后，再探索把**实测有效、受支持**的 Skill 路由交给执行器。当前还不能宣称 NFC 一步直达指定 Skill。
+
+当前 URI 路线尚未通过，下一项候选实验是由任务执行器发送启动界面的 Intent。若当前 NFC Tools 版本提供“发送意图 / Send an Intent”，采用以下候选参数；字段名称以该版本实际界面为准：
+
+```text
+目标类型：Activity（启动界面）
+Action：com.hihonor.magicvoice.action.VOICE_ASSISTANT
+Package：com.hihonor.magicvoice
+Class：com.hihonor.magicvoice.startup.MagicVoiceActivity
+Category：android.intent.category.DEFAULT（若有此字段）
+Data / MIME / Extras：留空
+```
+
+这是根据该测试机组件声明安排的实验，尚未实测成功。若被系统拒绝或没有界面，记录任务执行器提示和当次启动错误；不通过添加系统签名权限、调用受保护的快捷方式组件来绕过限制。单独启动 YOYO 通过后，才继续确认指定 Skill 的受支持入口。
+
+备选路线是 NFC 中保存公开 HTTPS 入口 → 浏览器入口页 → 用户点击按钮打开 YOYO → 手动选择 Skill。它可避免观众都安装 NFC Tasks，但会多一次点击；该专用入口页尚未实现。若要求既无需辅助应用、又直接选中指定 Skill，则需要继续核实荣耀提供的正式分发/唤起协议，或开发并测试专用 NFC 桥接应用。
+
+NFC 标签只承载入口或非敏感的公开盆栽标识，不存设备令牌、Wi-Fi 密码或临时安装凭据。碰贴只表示进入体验，不等于授权浇水或打印；本版仍保持 `HARDWARE_READY=false`。
+
+技术依据：[Android NFC 分发、AAR 与 Android 16 的链接行为](https://developer.android.com/develop/connectivity/nfc/nfc)、[NFC Tools 官方说明](https://www.wakdev.com/en/apps/nfc-tools-android.html)、[NFC Tasks 官方说明](https://www.wakdev.com/en/apps/other-apps/nfc-tasks.html)。系统路由分析只在本机进行，没有发布手机序列号、应用程序包、原始系统转储或 Skill 内部 ID。
+
+### 6.2 原始 XIAO Robot Kit 是怎样触发动作的
+
+2026-10-26 重新核对用户提供的 Getting Started ZIP：包括发布会版 `XIAO Robot Kit机甲小车-SKILL.md`，以及嵌套 `XIAO-Robot-Kit.zip` 中的原始固件。这里描述附件内的机制，不将本机后续增加的 Wi-Fi 装配门户当作原始发布会功能。
+
+附件中的动作链路是：**用户在 YOYO 中发出自然语言指令 → 机甲小车 Skill → 手机调用 BLE 工具 → XIAO 执行预设动作**。云台和音乐由手机上的其他工具同步处理。具体证据为：
+
+- Skill 的“对话触发”段（第74–77行）将“打个招呼”“不够热情”等语句映射到招呼和开心流程；“设备名称”段要求首次确定小车蓝牙名称，随后沿用对话上下文。
+- 原始 `main/main.c` 第1494–1496行启动 BLE；`main/ble_motor.c` 的 `start_advertising()` 广播设备名及自定义 GATT 服务。收到特征写入后，`gatt_access()` 才调用 `execute_command()`。这条控制接口接收手机指令；代码中未发现 NFC、HID 助手按键或唤醒手机的实现。
+- 原始 README 的“手部预设动作”段说明，上电会自动收臂。这是板端初始化，不能据此判断 YOYO 已唤醒。
+- Skill 的跳舞流程会先打开云台、用 `stop` 预热 BLE，再下发舞蹈、音乐和云台动作。约35.9秒舞蹈由固件在接收一条命令后执行，期间无需持续点击手机。
+
+**附件没有说明演示开始前第一次怎样唤醒 YOYO。**演示中没有触屏，可能是此前已进入技能或对话，也可能通过语音唤醒；不能仅凭这一现象断言小车反向激活了手机。原始 README 仅明确记录 BLE 文本协议通过 nRF Connect 验证，亦不能代替完整 YOYO 真机验收。
+
+[荣耀官方 YOYO 使用说明](https://www.honor.com/cn/support/content/zh-cn15888187/)列出了语音唤醒和连续对话：在支持的机型中，可在“设置 → 荣耀 AI & YOYO → YOYO 助理”开启对应选项，录入唤醒词；进入对话后可连续交流，无需每轮重新唤醒。该页也列出“按键唤醒 → 蓝牙设备唤醒”，但没有说明任意自定义 BLE GATT 外设都能使用；当前小车固件不能据此视为具备助手唤醒能力。
+
+RoboPlanter 的下一步应先验证同样的语音路径：按手机实际设置唤醒 YOYO → 通过已确认可用的“立即体验”或手动 `@` 选择 RoboPlanter → 语音说“今天好累，陪我一下” → 检查连续对话能否保持该技能。然后单独验证能否从 YOYO 主界面用技能名称直接路由。上述两项尚待这台手机实测；当前草稿继续保持 `HARDWARE_READY=false`。NFC 入口和 BLE 硬件验收仍分别记录，不作为语音对话测试的前置条件。
 
 ## 7. 未来硬件联调的前置条件
 
