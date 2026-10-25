@@ -27,4 +27,10 @@
 
 ## 发布状态
 
-本地实现与检查完成，公开发布记录在部署完成后补充。
+- 私有源码：`18441a6`，已推送至原分支 `codex/initial-sync`。
+- 公开站点更新：[PR 55](https://github.com/peterpanstechland/peterpanstechland.github.io/pull/55)，已合并。发布分支提交 `b06c0dca`，主分支合并提交 `6b199e712ad865e757eb3545f3059514bcedd7b3`。
+- Pages [40206341239](https://github.com/peterpanstechland/peterpanstechland.github.io/actions/runs/40206341239) 构建、上传与部署成功。
+- 正式页：[三维接线小工坊](https://peterpanstechland.github.io/roboplanter/#wiring-lab)。线上实际三维渲染正常；练习按钮完成水位路线并显示 1/9 与正确反馈，未出现控制台错误。
+- 线上实页截图：`build/review/landing-wiring-live.jpg`，未加入公开资产。
+- 公开固件源码复现包仍为 141 个白名单文件、636289 字节；SHA-256 `768a76b492e16b09bf0469e40fdd039c3b365f1702c95071fe1993e032ead4b0`。Device Kit 未变。
+- 除本轮源码外，既有未跟踪 `design/` 原件继续保留，没有加入公开站点或私有提交。
