@@ -325,9 +325,9 @@ export ROBOPLANTER_TOKEN
 
 ### 8.5 UART 打印机
 
-先确认供电与 TTL 电平：12 V 是供电标称，不表示串口也是 12 V。打印机独立供电；**XIAO TX GPIO43 / J10 pin1 → 打印机 RX**；公共 GND → J10 pin4。若需要连打印机 TX → XIAO RX GPIO44 / J10 pin2，必须先确认不高于 3.3 V 或加合适电平转换。当前固件不读状态，不接该 TX 也可只发单向文本。**J10 pin3 的 3.3 V 不给打印机供电。**
+先确认供电与 TTL 电平。断电后将 **SERVO4/J14 pin1 / D8 / GPIO7 → 打印机 RX**；打印机 TX 确认是 3.3V 逻辑或加电平转换后 → 原 UART/J10 pin2 / GPIO44。公共 GND → J10 pin4，GPIO43 不接打印机。SERVO4 不能同时接泵或舵机，打印模式与水泵模式不能同时启用。**打印机独立供电，SERVO4 的 Motor5V 和 UART 的 3.3V 都不接打印机电源。** 详细接线与验收见 [UART 打印机](uart-printer.md)。
 
-设置实际 `ROBO_PRINTER_BAUD`，`ROBO_ENABLE_PRINTER 1`、`ROBO_PRINTER_HARDWARE_CONFIRMED 1`，并保持动作总开关及非默认令牌；泵继续关闭。先发送短 ASCII：
+设置实际 `ROBO_PRINTER_BAUD`，确认换线后设置 `ROBO_ENABLE_PRINTER 1`、`ROBO_PRINTER_HARDWARE_CONFIRMED 1`、`ROBO_PRINTER_D8_WIRING_CONFIRMED 1`，并保持动作总开关及非默认令牌；泵继续关闭。先发送短 ASCII：
 
 ```powershell
 & $rpPython tools/device_cli.py print 'Hello planter'
@@ -340,7 +340,7 @@ export ROBOPLANTER_TOKEN
 "$rp_python" tools/device_cli.py result '<刚才的ID>'
 ```
 
-等待 `accepted → completed`，同时人工确认纸上文本正确。`bytes_sent` / `completed` 只证明软件串口发送完成，不证明出纸。支持最多 160 字节可打印 ASCII 和 LF；不支持中文编码、ESC/POS 控制码、切刀或缺纸反馈。超时或乱码先排查，不能自动重印。
+等待 `accepted → completed`，同时人工确认纸上文本正确。`bytes_sent` / `completed` 只证明软件串口发送完成，不证明出纸。请求支持最多 160 字节可打印 ASCII 和 LF；固件添加固定 ESC/POS 初始化及末尾走纸，不接受调用方传入控制码。不支持中文编码、切刀或缺纸反馈。超时或乱码先排查，不能自动重印。
 
 ### 8.6 水泵最后接入
 
