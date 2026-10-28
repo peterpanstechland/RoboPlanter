@@ -262,6 +262,7 @@ void gardenInteractionTests() {
   resetPage(0, 1); controlsOpen = confirmOpen = true; garden_ui::openCare(); touch = ui::TouchGate();
   State available; available.received = available.wifi = available.ageKnown = true;
   available.receivedMs = 1000; available.pumpEnabled = available.printerEnabled = true;
+  available.waterAllowed = true;
   tapRect(kConfirmGo, available, 1100); tapRect(kHardware[1], available, 1200);
   require(garden_ui::isOpen() && submitted.empty(),
           "A garden overlay must isolate hidden confirmation and direct STOP hitboxes");
@@ -346,6 +347,7 @@ void interactionTests() {
   available.received = available.wifi = available.ageKnown = true;
   available.receivedMs = 1000;
   available.pumpEnabled = available.printerEnabled = true;
+  available.waterAllowed = true;
   for (unsigned button : {0U, 3U}) {
     resetPage(0, 1); controlsOpen = true; touch = ui::TouchGate(); submitted.clear();
     tapRect(kHardware[button], available, 1100);
@@ -590,6 +592,10 @@ int main(int argc, char **argv) {
       hostState.ambientLightRaw = {2382, true};
       hostState.airRaw = {143, true};
       writeFrame(output, {english ? "en-ambient-info" : "zh-ambient-info", "screen", "info", 0, 1000, "zh", "sample_sensors_no_io"});
+      hostState.sen54Enabled = hostState.tankEnabled = hostState.tankCalibrated = true;
+      hostState.pm25 = {12.3f, true}; hostState.vocIndex = {105, true};
+      hostState.tankDistance = {150, true}; hostState.tankLevel = {50, true};
+      writeFrame(output, {english ? "en-sen54-info" : "zh-sen54-info", "screen", "info", 0, 1000, "zh", "sample_sensors_no_io"});
     }
     captureGarden(output);
     device_settings::setLanguage(device_settings::Language::Chinese);

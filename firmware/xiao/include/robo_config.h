@@ -59,6 +59,27 @@
 #ifndef ROBO_ENABLE_DHT20
 #define ROBO_ENABLE_DHT20 0
 #endif
+#ifndef ROBO_ENABLE_SEN54
+#define ROBO_ENABLE_SEN54 0
+#endif
+#ifndef ROBO_SEN54_WIRING_CONFIRMED
+#define ROBO_SEN54_WIRING_CONFIRMED 0
+#endif
+#ifndef ROBO_ENABLE_ULTRASONIC
+#define ROBO_ENABLE_ULTRASONIC 0
+#endif
+#ifndef ROBO_ULTRASONIC_WIRING_CONFIRMED
+#define ROBO_ULTRASONIC_WIRING_CONFIRMED 0
+#endif
+#ifndef ROBO_TANK_FULL_MM
+#define ROBO_TANK_FULL_MM -1
+#endif
+#ifndef ROBO_TANK_EMPTY_MM
+#define ROBO_TANK_EMPTY_MM -1
+#endif
+#ifndef ROBO_TANK_STOP_MM
+#define ROBO_TANK_STOP_MM -1
+#endif
 #ifndef ROBO_SHT31_ADDRESS
 #define ROBO_SHT31_ADDRESS 0x44
 #endif
@@ -67,6 +88,9 @@
 #endif
 #ifndef ROBO_PUMP_HARDWARE_CONFIRMED
 #define ROBO_PUMP_HARDWARE_CONFIRMED 0
+#endif
+#ifndef ROBO_RELAY_WIRING_CONFIRMED
+#define ROBO_RELAY_WIRING_CONFIRMED 0
 #endif
 #ifndef ROBO_MAX_WATER_MS
 #define ROBO_MAX_WATER_MS 3000
@@ -98,7 +122,8 @@
 
 namespace pins {
 constexpr int Soil = 1;       // D0, SERVO3 signal; supply sensor separately at 3.3V.
-constexpr int Pump = 7;       // D8/SERVO4: pump OR printer TX, never both.
+constexpr int Pump = 42;      // D15/SERVO1/J1: active-HIGH Grove Relay v1.2.
+constexpr int Ultrasonic = 8; // D9/SERVO2/J5: replaces analog Air Quality v1.3.
 constexpr int Air = 8;        // D9, SERVO2 signal: servo must be disconnected.
 constexpr int Uv = 1;         // D0, SERVO3 signal; separate 3.3V supply, no servo.
 constexpr int AmbientLight = 1; // Grove Light v1.2 replaces UV on SERVO3/D0.
@@ -132,12 +157,22 @@ static_assert(!(ROBO_ENABLE_DHT20 && ROBO_ENABLE_SHT31),
               "Choose one environment sensor: Grove v2.0 DHT20 or SHT31");
 static_assert(!ROBO_ENABLE_PUMP || ROBO_PUMP_HARDWARE_CONFIRMED,
               "Confirm external pump driver, polarity, supply and current first");
+static_assert(!ROBO_ENABLE_PUMP || ROBO_RELAY_WIRING_CONFIRMED,
+              "Confirm relay moved to SERVO1 GPIO42; SERVO4 belongs to printer");
 static_assert(!ROBO_ENABLE_PRINTER || ROBO_PRINTER_HARDWARE_CONFIRMED,
               "Confirm printer supply, TTL voltage, baud and protocol first");
 static_assert(!ROBO_ENABLE_PRINTER || ROBO_PRINTER_D8_WIRING_CONFIRMED,
               "Printer RX must connect to SERVO4 D8/GPIO7; remove pump/servo");
-static_assert(!(ROBO_ENABLE_PRINTER && ROBO_ENABLE_PUMP),
-              "SERVO4 D8/GPIO7 is shared: printer and pump cannot both be enabled");
+static_assert(pins::Pump != pins::PrinterTx, "Pump must not share printer TX");
+static_assert(!ROBO_ENABLE_SEN54 || ROBO_SEN54_WIRING_CONFIRMED,
+              "SEN54 requires verified 5V supply and 3.3V I2C logic");
+static_assert(!(ROBO_ENABLE_SEN54 && (ROBO_ENABLE_DHT20 || ROBO_ENABLE_SHT31 || ROBO_ENABLE_AIR)),
+              "SEN54 replaces the legacy environment and analog air sensors");
+static_assert(!ROBO_ENABLE_ULTRASONIC || ROBO_ULTRASONIC_WIRING_CONFIRMED,
+              "Confirm Grove Ranger v2.0 on SERVO2 with separate 3.3V supply");
+static_assert(!(ROBO_ENABLE_ULTRASONIC && ROBO_ENABLE_AIR), "SERVO2 cannot host air ADC and ranger");
+static_assert(!ROBO_ENABLE_PUMP || ROBO_ENABLE_ULTRASONIC,
+              "Pump requires the water tank sensor and runtime interlock");
 static_assert(ROBO_PRINTER_BAUD >= 9600 && ROBO_PRINTER_BAUD <= 1000000,
               "Printer baud must be 9600..1000000 for the bounded raster transport");
 static_assert(!(ROBO_ENABLE_SOIL && ROBO_ENABLE_REMOTE_SOIL), "Choose one soil source");

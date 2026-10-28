@@ -21,6 +21,10 @@ struct State {
   NetworkFailure networkFailure = NetworkFailure::None;
   int16_t httpStatus = 0;
   Reading soilRaw, soilPercent, airRaw, uvRaw, ambientLightRaw, temperature, humidity;
+  Reading pm25, vocIndex, tankDistance, tankLevel;
+  bool sen54Enabled = false, tankEnabled = false, tankCalibrated = false;
+  bool waterAllowed = false;
+  char waterBlockReason[32] = {};
   bool ambientLightEnabled = false;
   bool soilCalibrationKnown = false, soilCalibrated = false;
   bool pumpKnown = false, pumpEnabled = false, pumpOn = false;

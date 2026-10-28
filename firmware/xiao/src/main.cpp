@@ -24,6 +24,7 @@
 #include "remote_soil.h"
 #include "diagnostic_read_session.h"
 #include "dht20.h"
+#include "sen54.h"
 #if ROBO_WS2813_RMT
 #include "ws2813_rmt.h"
 #endif
@@ -52,6 +53,10 @@ robo::Config controlConfig() {
   c.lightEnabled = ROBO_ENABLE_LIGHT && ActionsReady;
   c.printerEnabled = ROBO_ENABLE_PRINTER && ActionsReady;
   c.maxWaterMs = ROBO_MAX_WATER_MS;
+  c.tankRequired = true;
+  c.tankCalibration.fullMm = ROBO_TANK_FULL_MM;
+  c.tankCalibration.emptyMm = ROBO_TANK_EMPTY_MM;
+  c.tankCalibration.stopMm = ROBO_TANK_STOP_MM;
   return c;
 }
 
@@ -78,6 +83,8 @@ esp_gatt_if_t bleGattsIf = ESP_GATT_IF_NONE;
 robo::BleSession bleSession;
 robo::BlePreparedWrite<MaxBleBytes> blePreparedWrite;
 String deviceId;
+bool sen54Detected = false;
+char sen54Product[33] = {};
 
 struct Sample {
   int soil = -1;
@@ -91,6 +98,9 @@ struct Sample {
   bool environmentValid = false;
   float temperature = NAN;
   float humidity = NAN;
+  robo::Sen54Sample sen54;
+  bool sen54Valid = false;
+  int tankMm = -1;
   uint32_t timestamp = 0;
 };
 Sample sample;
@@ -181,7 +191,58 @@ int readAnalog(int pin) {
   return total / 8;
 }
 
+struct Sen54Bus {
+  bool command(uint16_t command, unsigned waitMs) {
+    Wire.beginTransmission(0x69);
+    Wire.write(uint8_t(command >> 8)); Wire.write(uint8_t(command));
+    if (Wire.endTransmission() != 0) return false;
+    vTaskDelay(pdMS_TO_TICKS(waitMs));
+    return true;
+  }
+  bool read(uint8_t* bytes, size_t count) {
+    if (Wire.requestFrom(uint8_t(0x69), uint8_t(count)) != count) return false;
+    for (size_t i = 0; i < count; ++i) bytes[i] = Wire.read();
+    return true;
+  }
+};
+
+void probeKnownI2cSensors() {
+  // Identification only: no fan, actuator or measurement start commands.
+  for (uint8_t address : {uint8_t(0x38), uint8_t(0x44), uint8_t(0x69), uint8_t(0x6a)}) {
+    Wire.beginTransmission(address);
+    const bool present = Wire.endTransmission() == 0;
+    Serial.printf("Sensor I2C 0x%02x: %s\n", address, present ? "ACK" : "no response");
+    if (address != 0x69 || !present) continue;
+    sen54Detected = true;
+    Sen54Bus bus; uint8_t data[48]; char name[33] = {};
+    bool valid = bus.command(0xd014, 20) && bus.read(data, sizeof(data));
+    for (unsigned i = 0; valid && i < 16; ++i) {
+      valid = robo::sen54Crc(data + i * 3) == data[i * 3 + 2];
+      for (unsigned j = 0; j < 2; ++j) {
+        const char c = char(data[i * 3 + j]);
+        name[i * 2 + j] = c >= 32 && c <= 126 ? c : '\0';
+      }
+    }
+    Serial.printf("Sensor 0x69 product: %s\n", valid ? name : "unavailable / CRC error");
+    if (valid) memcpy(sen54Product, name, sizeof(name));
+  }
+}
+
+int readTankDistance() {
+  // Grove Ranger v2.0 uses a single bidirectional SIG, powered at 3.3V.
+  pinMode(pins::Ultrasonic, OUTPUT);
+  digitalWrite(pins::Ultrasonic, LOW); delayMicroseconds(2);
+  digitalWrite(pins::Ultrasonic, HIGH); delayMicroseconds(12);
+  digitalWrite(pins::Ultrasonic, LOW);
+  pinMode(pins::Ultrasonic, INPUT);
+  return robo::ultrasonicDistanceMm(pulseIn(pins::Ultrasonic, HIGH, 25000));
+}
+
 void sensorTask(void*) {
+  Sen54Bus senBus;
+  bool senStarted = false;
+  uint32_t senStartAttempt = 0;
+  if (ROBO_ENABLE_SEN54) vTaskDelay(pdMS_TO_TICKS(100));
   if (ROBO_ENABLE_DHT20) vTaskDelay(pdMS_TO_TICKS(100));
   TickType_t wake = xTaskGetTickCount();
   for (;;) {
@@ -209,6 +270,30 @@ void sensorTask(void*) {
       next.environmentValid = robo::readDht20(bus, next.temperature, next.humidity) ==
                               robo::Dht20Result::Ok;
     }
+    if (ROBO_ENABLE_SEN54) {
+      if (!senStarted) {
+        senStartAttempt = millis();
+        senStarted = senBus.command(0x0021, 50);
+      } else {
+        const auto result = robo::readSen54(senBus, next.sen54);
+        next.sen54Valid = result == robo::Sen54Result::Ok;
+        if (result == robo::Sen54Result::Transport || result == robo::Sen54Result::Crc ||
+            (result == robo::Sen54Result::NotReady && millis() - senStartAttempt > 10000))
+          senStarted = false;
+        if (next.sen54Valid) {
+          senStartAttempt = millis();
+          next.temperature = next.sen54.temperature;
+          next.humidity = next.sen54.humidity;
+          next.environmentValid = std::isfinite(next.temperature) && std::isfinite(next.humidity);
+        }
+      }
+    }
+    if (ROBO_ENABLE_ULTRASONIC) {
+      next.tankMm = readTankDistance();
+      Lock guard(coreMutex);
+      controller.updateTank(next.tankMm, millis());
+      writePump();
+    }
     next.timestamp = millis();
     {
       Lock guard(sensorMutex);
@@ -229,6 +314,8 @@ Sample copySample() {
     current.soilValid = current.airValid = current.uvValid = false;
     current.ambientValid = false;
     current.environmentValid = false;
+    current.sen54Valid = false;
+    current.tankMm = -1;
   }
   return current;
 }
@@ -352,6 +439,26 @@ void stateJson(JsonDocument& document) {
   JsonObject air = document.createNestedObject("air");
   if (current.air >= 0) air["raw"] = current.air; else air["raw"] = nullptr;
   air["valid"] = current.airValid;
+  JsonObject sen = document.createNestedObject("sen54");
+  sen["enabled"] = bool(ROBO_ENABLE_SEN54);
+  sen["detected"] = sen54Detected;
+  sen["product"] = sen54Product;
+  sen["valid"] = current.sen54Valid;
+  const char* keys[] = {"pm1_ug_m3", "pm25_ug_m3", "pm4_ug_m3", "pm10_ug_m3", "voc_index"};
+  const float values[] = {current.sen54.pm1, current.sen54.pm25, current.sen54.pm4, current.sen54.pm10, current.sen54.voc};
+  for (unsigned i = 0; i < 5; ++i) {
+    if (current.sen54Valid && std::isfinite(values[i])) sen[keys[i]] = values[i];
+    else sen[keys[i]] = nullptr;
+  }
+  const auto calibration = controlConfig().tankCalibration;
+  JsonObject tank = document.createNestedObject("water_tank");
+  tank["enabled"] = bool(ROBO_ENABLE_ULTRASONIC);
+  tank["valid"] = current.tankMm >= 20;
+  tank["calibrated"] = calibration.valid();
+  if (current.tankMm >= 20) tank["distance_mm"] = current.tankMm;
+  else tank["distance_mm"] = nullptr;
+  const float level = robo::tankLevelPercent(current.tankMm, calibration);
+  if (level >= 0) tank["level_pct"] = level; else tank["level_pct"] = nullptr;
   JsonObject uv = document.createNestedObject("uv");
   if (current.uv >= 0) uv["raw"] = current.uv; else uv["raw"] = nullptr;
   uv["valid"] = current.uvValid;
@@ -361,6 +468,7 @@ void stateJson(JsonDocument& document) {
   ambient["valid"] = current.ambientValid;
   JsonObject environment = document.createNestedObject("environment");
   environment["valid"] = current.environmentValid;
+  environment["source"] = ROBO_ENABLE_SEN54 ? "sen54" : ROBO_ENABLE_DHT20 ? "dht20" : "sht31";
   if (current.environmentValid) {
     environment["temperature_c"] = current.temperature;
     environment["humidity_pct"] = current.humidity;
@@ -373,6 +481,8 @@ void stateJson(JsonDocument& document) {
   pump["enabled"] = ROBO_ENABLE_PUMP && ActionsReady;
   pump["on"] = controller.pumpOn();
   pump["remaining_ms"] = controller.remainingMs(millis());
+  pump["water_block_reason"] = controller.waterBlockReason(millis());
+  pump["water_allowed"] = bool(ROBO_ENABLE_PUMP && ActionsReady && !*controller.waterBlockReason(millis()));
   JsonObject light = document.createNestedObject("light");
   light["enabled"] = ROBO_ENABLE_LIGHT && ActionsReady;
   light["on"] = controller.lightOn();
@@ -563,6 +673,7 @@ std::vector<std::string> split(const std::string& line) {
 }
 
 const char* shortError(const std::string& error) {
+  if (error.compare(0, 5, "tank_") == 0) return "TANK";
   if (error == "actions_disabled") return "LOCK";
   if (error == "pump_disabled" || error == "light_disabled" || error == "printer_disabled") return "OFF";
   if (error == "pump_busy" || error == "printer_busy") return "BUSY";
@@ -767,8 +878,7 @@ void bleTask(void*) {
 }
 
 void failClosed(const char* reason) {
-  // D8 belongs to UART while printing is enabled; do not force a UART break.
-  if (!ROBO_ENABLE_PRINTER) digitalWrite(pins::Pump, LOW);
+  if (ROBO_RELAY_WIRING_CONFIRMED) digitalWrite(pins::Pump, LOW);
   Serial.println(reason);
   for (;;) delay(1000);
 }
@@ -780,10 +890,14 @@ void setup() {
   // so it remains off during reset, before these GPIOs become outputs.
   const int safePins[] = {2, 3, 39, 11, 12};
   for (int pin : safePins) { digitalWrite(pin, LOW); pinMode(pin, OUTPUT); }
-  // UART idles HIGH. Avoid the former pump initialization pulling printer TX
-  // LOW before UART1 starts. The config rejects simultaneous pump/printer use.
-  digitalWrite(pins::Pump, ROBO_ENABLE_PRINTER ? HIGH : LOW);
-  pinMode(pins::Pump, OUTPUT);
+  if (ROBO_RELAY_WIRING_CONFIRMED) {
+    digitalWrite(pins::Pump, LOW);
+    pinMode(pins::Pump, OUTPUT);
+  }
+  if (ROBO_ENABLE_PRINTER) {
+    digitalWrite(pins::PrinterTx, HIGH);
+    pinMode(pins::PrinterTx, OUTPUT);
+  }
   Serial.begin(115200);
   coreMutex = xSemaphoreCreateMutex();
   sensorMutex = xSemaphoreCreateMutex();
@@ -801,10 +915,11 @@ void setup() {
   if (ROBO_ENABLE_AIR) { pinMode(pins::Air, INPUT); analogSetPinAttenuation(pins::Air, ADC_11db); }
   if (ROBO_ENABLE_UV) { pinMode(pins::Uv, INPUT); analogSetPinAttenuation(pins::Uv, ADC_11db); }
   if (ROBO_ENABLE_AMBIENT_LIGHT) { pinMode(pins::AmbientLight, INPUT); analogSetPinAttenuation(pins::AmbientLight, ADC_11db); }
-  if (ROBO_ENABLE_SHT31 || ROBO_ENABLE_DHT20) {
+  if (ROBO_ENABLE_SHT31 || ROBO_ENABLE_DHT20 || ROBO_ENABLE_SEN54) {
     Wire.begin(pins::Sda, pins::Scl);
     Wire.setClock(100000);
     Wire.setTimeOut(30);
+    probeKnownI2cSensors();
   }
   if (ROBO_ENABLE_LIGHT) {
 #if ROBO_WS2813_RMT
@@ -841,7 +956,7 @@ void setup() {
   http.collectHeaders(headers, 2);
   http.on("/api/v1/state", HTTP_GET, []() {
     if (!httpAuthorized()) return;
-    StaticJsonDocument<2048> output;
+    StaticJsonDocument<3072> output;
     stateJson(output);
     sendJson(200, output);
   });

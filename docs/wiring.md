@@ -4,7 +4,38 @@
 
 ## 当前传感器联调接线（2026-10-28）
 
-以下为本轮接线，优先于后文注明日期的历史候选方案。DHT20 已刷入并收到连续有效读数，用户确认手靠近时屏幕读数变化；Air 已启用。用户随后以 Grove Light Sensor v1.2 替换 UV，SERVO3 改为环境光输入。
+### 最新方案：SEN54、超声波和继电器（2026-10-28 已接入）
+
+用户指定不使用 M2/J9。SEN54 替换 Air Quality v1.3 和 DHT20；SERVO2 改接 Grove Ultrasonic Ranger v2.0，SERVO1 接 Grove Relay v1.2。用户已确认新接线，继电器负载端暂为空；正式浇水尚未启用。旧实测配置保留在下表之后。
+
+| 外设 | 新信号分配 | 供电与接线要求 |
+| --- | --- | --- |
+| SEN54 | IIC1/J11 或 IIC2/J12：SDA GPIO5、SCL GPIO6，地址 0x69 | 本体需要 5V（4.5–5.5V）；板上 IIC 口红线只有 3.3V，不能按普通 Grove 线直接供电。确认转接板后，另接稳定 5V、共地，SDA/SCL 上拉保持 3.3V。裸模块 SEL 按官方说明接 GND。不能把 5V 反灌到 IIC 的 3.3V 电源脚。 |
+| 超声波 v2.0 | SERVO2/J5 pin1，D9/GPIO8 → 黄色 SIG | 拆下原 Air Quality。红线另取 3.3V，黑线 GND，白线不用；不接 Servo 插座的 5V，保持回波为 3.3V。单 SIG 双向，不是 HC-SR04 的 TRIG/ECHO 两线。 |
+| 继电器 v1.2 | SERVO1/J1 pin1，D15/GPIO42 → SIG | 核实 J1 空闲，按 v1.2 的 3.3–5V 规格供电并共地，白线 NC。高电平吸合；先验证上电、复位及短脉冲默认断开，再接泵。 |
+| Light Sensor v1.2 | SERVO3/J13 GPIO1 | 保持原 3.3V 分线接法。 |
+| 热敏打印机 | SERVO4/J14 GPIO7 → 打印机 RX；J10 GPIO44 ← 打印机 TX | 保持独立 12V、共地；SERVO4 不接继电器或水泵。 |
+| 土壤、灯带 | Indicator ADC GPIO27；Robot RGB GPIO40 | 保持已验证接法。 |
+
+SEN54 输出温湿度、PM1/PM2.5/PM4/PM10 和 VOC 指数；不提供 CO₂ 或 NOx。固件逐字校验 CRC，PM 无效码 0xffff、带符号数据无效码 0x7fff 和 VOC 启动值 0 都不会显示成有效测量。环境页显示 PM2.5（ug/m3）、VOC 指数、环境光和水面距离；无回波显示未知，未标定不显示百分比。水位百分比是高度比例，不是剩余毫升数。
+
+超声波固定在水面上方、避开箱壁和进水水流，探头不得浸水。标定 `ROBO_TANK_FULL_MM`（满水距离）、`ROBO_TANK_EMPTY_MM`（空箱距离）、`ROBO_TANK_STOP_MM`（仍能淹没泵进水口的停泵距离），必须 `20 <= full < stop < empty <= 3500`。普通开放探头在小水箱、波纹或冷凝环境下可能无可靠回波，需要实测确认；不能只用箱深推算标定值。
+
+固件新选项默认关闭，需分别确认 `ROBO_SEN54_WIRING_CONFIRMED`、`ROBO_ULTRASONIC_WIRING_CONFIRMED`、`ROBO_PUMP_HARDWARE_CONFIRMED`。启用 SEN54 时关闭 DHT20/SHT31/AIR；超声波与 AIR 不能同时占 GPIO8。水泵 GPIO42 与打印 GPIO7 已分离，但仍保留打印/浇水互斥和独立 10ms 停泵任务。无标定、低水位、无效/过期回波或距离小于满水参考时禁止启动；运行中出现这些情况会关闭继电器并记录失败原因。不会自动恢复浇水。
+
+泵接继电器的常开触点回路，**不接 GPIO 或 Servo 电源脚**。普通两端子 Grove Relay 接法为独立 12V 正极 → 触点一端 → 触点另一端 → 泵正极，泵负极 → 12V 负极。模块只有两颗接线端子时不要寻找不存在的第三个 NC 端子。水泵额定/启动电流及合适的续流保护尚待确认；目前不启用带泵实测。先做断电换线和不带泵的继电器测试，再进行水箱标定、短时浇水和低水位断泵验收。
+
+参考：[SEN54 官方驱动与接线](https://github.com/Sensirion/arduino-i2c-sen5x)、[超声波规格](https://wiki.seeedstudio.com/Grove-Ultrasonic_Ranger/)、[Relay v1.2 规格](https://wiki.seeedstudio.com/Grove-Relay/)。
+
+本轮实测：最初 SEN54 整根 Grove 线插 IIC（3.3V）时只有 0x69 应答，没有有效产品名称；用户改为独立 5V、信号保持 3.3V 后，正确识别 `SEN54`，收到连续有效 PM 和温湿度/VOC 数据。示例约28.7°C、54.0% RH、PM2.5 33.5 ug/m3、VOC 指数106，仅为当时读数，不是空气健康判定。DHT20/AIR 采集已关闭，DHT20 可断电拔下。
+
+超声波首个有效样本289mm，水位未标定，`level_pct=null`。继电器由独立 `firmware/xiao-relay-diagnostics` 执行一次 USB 指令触发的300ms空载脉冲，程序回报 ON→OFF，随后恢复正式固件；用户确认听到咔嗒、指示灯短亮后熄灭，Indicator页面正常且距离随物体移动变化。`ROBO_RELAY_WIRING_CONFIRMED=1` 会使正式固件将GPIO42保持LOW，即使水泵功能尚未启用。用户决定等水箱主体完成再进行泵电流核对、水位标定和带泵测试；目前水泵保持禁用，联调完成范围不包含实际供水。
+
+两块设备均只更新0x10000应用分区，保留NVS和配对。XIAO应用SHA256 `9aea23690d1b9c3898b5a4f8760851ec56e80593f608f636e5ee9d9ee2325817`；Indicator应用SHA256 `89c5a4a05c6aeaef2e8d36c84ec3cf609121a57d712b3df22636a4c297368581`。备份在本地忽略目录，不上传含私有配置的固件镜像。
+
+### 换线前已验证的传感器配置（历史，现由上表替代）
+
+DHT20 已刷入并收到连续有效读数，用户确认手靠近时屏幕读数变化；Air 已启用。用户随后以 Grove Light Sensor v1.2 替换 UV，SERVO3 改为环境光输入。
 
 | 外设 | 信号与供电 | 当前情况 |
 | --- | --- | --- |

@@ -60,6 +60,16 @@ int main(int argc, char **argv) {
       CHECK(planter::snapshot().uvRaw.value == 321);
       settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"ambient_light":{"enabled":false,"raw":1200,"valid":true}})";
       pollState(); CHECK(!planter::snapshot().ambientLightRaw.valid);
+      settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"sen54":{"enabled":true,"valid":true,"pm25_ug_m3":12.3,"voc_index":105},"water_tank":{"enabled":true,"valid":true,"calibrated":false,"distance_mm":150,"level_pct":50},"pump":{"enabled":true,"on":false,"water_allowed":false,"water_block_reason":"tank_uncalibrated"}})";
+      pollState(); auto sensors = planter::snapshot();
+      CHECK(sensors.pm25.valid && sensors.vocIndex.valid && sensors.tankDistance.valid);
+      CHECK(!sensors.tankLevel.valid && !sensors.waterAllowed);
+      CHECK(!planter::submit(planter::Action::Water));
+      CHECK(!strcmp(sensors.waterBlockReason,"tank_uncalibrated"));
+      settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"sen54":{"enabled":true,"valid":true,"pm25_ug_m3":null,"voc_index":0},"water_tank":{"enabled":true,"valid":false,"calibrated":true,"distance_mm":150,"level_pct":50},"pump":{"enabled":true,"on":false}})";
+      pollState(); sensors = planter::snapshot();
+      CHECK(!sensors.pm25.valid && !sensors.vocIndex.valid && !sensors.tankDistance.valid && !sensors.tankLevel.valid);
+      CHECK(!planter::submit(planter::Action::Water)); // Missing explicit permission fails closed.
     } else if (scenario == "print") {
       CHECK(planter::begin());
       const String modern = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle","text_format":"utf8-raster","layout":"receipt32-v2","autocut":true}})";
@@ -140,7 +150,7 @@ int main(int argc, char **argv) {
       CHECK(planter_presentation::link(planter::snapshot(), device_settings::wifiState(), millis()) == Link::Stale);
     } else {
       CHECK(planter::begin());
-      settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"pump":{"enabled":true,"on":true},"light":{"enabled":true,"on":false},"printer":{"enabled":true,"status":"idle"}})";
+      settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"pump":{"enabled":true,"on":true,"water_allowed":true},"light":{"enabled":true,"on":false},"printer":{"enabled":true,"status":"idle"}})";
       connectConfiguredNetwork();
       const auto initialNetwork = device_settings::networkRevision();
       CHECK(planter::submit(planter::Action::StopWater));

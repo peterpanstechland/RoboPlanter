@@ -6,6 +6,7 @@
 #include "light_effects.h"
 #include "printer_text.h"
 #include "daily_ticket.h"
+#include "water_tank.h"
 
 namespace robo {
 
@@ -53,6 +54,8 @@ struct Config {
   bool lightEnabled = false;
   bool printerEnabled = false;
   uint32_t maxWaterMs = 3000;
+  bool tankRequired = false;
+  TankCalibration tankCalibration;
 };
 
 inline bool validId(const std::string& id) {
@@ -87,7 +90,7 @@ inline bool parseUnsigned(const std::string& text, uint32_t& value) {
 // start the pump again after unrelated commands. Capacity exhaustion fails closed.
 class Controller {
  public:
-  explicit Controller(const Config& config) : config_(config) { last_.status = "none"; }
+  explicit Controller(const Config& config) : config_(config), tank_(config.tankCalibration) { last_.status = "none"; }
 
   Result submit(const Command& command, uint32_t now) {
     tick(now);
@@ -115,6 +118,8 @@ class Controller {
     result.requestId = command.requestId;
     result.status = "completed";
     if (command.action == "water") {
+      const char* waterError = waterBlockReason(now);
+      if (*waterError) return reject(command, waterError);
       if (pumpOn_) return reject(command, "pump_busy");
       if (printerBusy_) return reject(command, "printer_busy");
       pumpOn_ = true;
@@ -141,9 +146,18 @@ class Controller {
   }
 
   void tick(uint32_t now) {
+    if (pumpOn_ && *waterBlockReason(now)) {
+      pumpOn_ = false;
+      finish(pumpRequestId_, false, waterBlockReason(now));
+    }
     // Subtraction is correct across millis() wrap; durations are <= 30 seconds.
     if (pumpOn_ && static_cast<uint32_t>(now - pumpStartedMs_) >= pumpDurationMs_)
       completePump();
+  }
+
+  void updateTank(int distanceMm, uint32_t now) { tank_.update(distanceMm, now); tick(now); }
+  const char* waterBlockReason(uint32_t now) const {
+    return config_.tankRequired ? tank_.error(now) : "";
   }
 
   void finishPrint(const std::string& requestId, bool success) {
@@ -181,6 +195,7 @@ class Controller {
  private:
   struct Entry { Command command; Result result; };
   Config config_;
+  TankGuard tank_;
   std::array<Entry, CacheCapacity> entries_{};
   size_t used_ = 0;
   bool pumpOn_ = false;

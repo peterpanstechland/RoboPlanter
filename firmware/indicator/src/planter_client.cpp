@@ -132,6 +132,21 @@ void pollState() {
   next.soilPercent.valid = next.soilPercent.valid && next.soilCalibrated &&
                            next.soilPercent.value >= 0 && next.soilPercent.value <= 100;
   next.airRaw = reading(doc["air"], "raw");
+  next.sen54Enabled = doc["sen54"]["enabled"] == true;
+  if (next.sen54Enabled) {
+    next.pm25 = reading(doc["sen54"], "pm25_ug_m3");
+    next.vocIndex = reading(doc["sen54"], "voc_index");
+    next.pm25.valid = next.pm25.valid && next.pm25.value >= 0 && next.pm25.value <= 1000;
+    next.vocIndex.valid = next.vocIndex.valid && next.vocIndex.value >= 1 && next.vocIndex.value <= 500;
+  }
+  next.tankEnabled = doc["water_tank"]["enabled"] == true;
+  next.tankCalibrated = doc["water_tank"]["calibrated"] == true;
+  if (next.tankEnabled) {
+    next.tankDistance = reading(doc["water_tank"], "distance_mm");
+    next.tankDistance.valid = next.tankDistance.valid && next.tankDistance.value >= 20 && next.tankDistance.value <= 3500;
+    next.tankLevel = reading(doc["water_tank"], "level_pct");
+    next.tankLevel.valid = next.tankLevel.valid && next.tankCalibrated && next.tankDistance.valid && next.tankLevel.value >= 0 && next.tankLevel.value <= 100;
+  }
   next.uvRaw = reading(doc["uv"], "raw");
   next.ambientLightEnabled = doc["ambient_light"]["enabled"].is<bool>() &&
                             doc["ambient_light"]["enabled"].as<bool>();
@@ -145,6 +160,8 @@ void pollState() {
   const auto pump = doc["pump"];
   next.pumpKnown = pump["enabled"].is<bool>() && pump["on"].is<bool>();
   next.pumpEnabled = next.pumpKnown && pump["enabled"].as<bool>();
+  next.waterAllowed = next.pumpEnabled && pump["water_allowed"] == true;
+  copy(next.waterBlockReason, pump["water_block_reason"] | "");
   next.pumpOn = next.pumpKnown && pump["on"].as<bool>();
   next.remainingKnown = pump["remaining_ms"].is<uint32_t>();
   if (next.remainingKnown) next.remainingMs = pump["remaining_ms"].as<uint32_t>();
@@ -254,7 +271,7 @@ void sendCommand(const Command &command) {
   const bool stop = command.action == Action::StopWater;
   const bool enabled = (command.action == Action::Water || stop) ? state.pumpEnabled :
                        command.action == Action::Light ? state.lightEnabled : state.printerEnabled;
-  if (!enabled || (!stop && !planter::fresh(state, millis()))) {
+  if (!enabled || (command.action == Action::Water && !state.waterAllowed) || (!stop && !planter::fresh(state, millis()))) {
     commandResult(command.id, "not_sent", "Unavailable or stale device state", false); return;
   }
   if (command.action == Action::Print && (!strcmp(state.printerStatus, "recovery_required") ||
@@ -426,6 +443,7 @@ bool submit(Action action, bool lightOn, const PrintReceipt *receipt) {
   const bool enabled = (action == Action::Water || stop) ? shared.pumpEnabled :
                        action == Action::Light ? shared.lightEnabled : shared.printerEnabled;
   if (!enabled || !shared.wifi || shared.networkRevision != device_settings::networkRevision() ||
+      (action == Action::Water && !shared.waterAllowed) ||
       !device_settings::planterNetworkReady() || (!stop && (!fresh(shared, millis()) || shared.commandBlocked)) ||
       (action == Action::Print && (!strcmp(shared.printerStatus, "recovery_required") ||
        (receipt->requiresRaster && !shared.printerRaster) ||

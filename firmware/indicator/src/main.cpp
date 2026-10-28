@@ -165,21 +165,27 @@ void infoRow(int y,Icon symbol,const char *name,const char *value) {
 }
 void infoPage(const State &s,uint32_t now) {
   title(tr("工位信息","Desk notes"),tr("工位情报 · 来自花盆的消息","A note from your planter."));
-  auto &g=indicator::display();g.fillRoundRect(24,145,432,191,12,theme().card);
+  auto &g=indicator::display();g.fillRoundRect(24,145,432,255,12,theme().card);
   const bool fresh=planter::fresh(s,now);char buffer[80];
   infoRow(161,Icon::Wifi,tr("连接","Connection"),connection(s,now));
   g.drawFastHLine(40,190,400,0xD6B9);
   if(s.received&&s.ageKnown)snprintf(buffer,sizeof(buffer),"%lus",static_cast<unsigned long>((static_cast<uint64_t>(now-s.receivedMs)+s.sampleAgeMs)/1000));else strlcpy(buffer,tr("未知","Unknown"),sizeof(buffer));
   infoRow(202,Icon::Clock,tr("采样距今","Sample age"),buffer);
-  if(s.airRaw.valid)snprintf(buffer,sizeof(buffer),tr("%.0f 原始值%s","%.0f raw%s"),s.airRaw.value,fresh?"":tr(" / 旧值"," / old"));else strlcpy(buffer,tr("暂无有效值","No reading"),sizeof(buffer));
-  infoRow(244,Icon::Leaf,tr("空气原始值","Air raw"),buffer);
+  if(s.sen54Enabled) {
+    if(s.pm25.valid)snprintf(buffer,sizeof(buffer),"%.1f ug/m3%s",s.pm25.value,fresh?"":tr(" / 旧值"," / old"));else strlcpy(buffer,tr("等待传感器","No sensor data"),sizeof(buffer));
+  } else if(s.airRaw.valid)snprintf(buffer,sizeof(buffer),tr("%.0f 原始值%s","%.0f raw%s"),s.airRaw.value,fresh?"":tr(" / 旧值"," / old"));else strlcpy(buffer,tr("暂无有效值","No reading"),sizeof(buffer));
+  infoRow(240,Icon::Leaf,s.sen54Enabled?"PM2.5":tr("空气原始值","Air raw"),buffer);
   const auto &lightReading=s.ambientLightEnabled?s.ambientLightRaw:s.uvRaw;
   if(lightReading.valid)snprintf(buffer,sizeof(buffer),tr("%.0f 原始值%s","%.0f raw%s"),lightReading.value,fresh?"":tr(" / 旧值"," / old"));else strlcpy(buffer,tr("暂无有效值","No reading"),sizeof(buffer));
-  infoRow(286,Icon::Light,s.ambientLightEnabled?tr("环境光","Ambient"):tr("紫外原始值","UV raw"),buffer);
-  g.fillRoundRect(24,348,432,78,12,theme().surface);
-  icon(Icon::Yoyo,40,365,34,theme().second);
-  label(88,359,tr("YOYO 在手机上陪你","Use YOYO on your phone"),theme().ink);
-  label(88,386,tr("原始数值不等于空气质量或光照","Raw values are not air or light ratings."),theme().muted);
+  infoRow(278,Icon::Light,s.ambientLightEnabled?tr("环境光","Ambient"):tr("紫外原始值","UV raw"),buffer);
+  if(s.vocIndex.valid)snprintf(buffer,sizeof(buffer),"%.0f%s",s.vocIndex.value,fresh?"":tr(" / 旧值"," / old"));else strlcpy(buffer,tr("暂无有效值","No reading"),sizeof(buffer));
+  infoRow(316,Icon::Leaf,tr("VOC 指数","VOC index"),buffer);
+  if(s.tankDistance.valid) {
+    if(s.tankLevel.valid)snprintf(buffer,sizeof(buffer),"%.0f%% / %.0f mm%s",s.tankLevel.value,s.tankDistance.value,fresh?"":tr(" / 旧值"," / old"));
+    else snprintf(buffer,sizeof(buffer),tr("%.0f mm / 待校准","%.0f mm / calibrate"),s.tankDistance.value);
+  } else strlcpy(buffer,tr("暂无有效值","No reading"),sizeof(buffer));
+  infoRow(354,Icon::Water,tr("水箱液位","Tank level"),buffer);
+  label(40,412,tr("YOYO 在手机上陪你","Use YOYO on your phone"),theme().muted);
   statusStrip(s,now);
 }
 void photosPage(const State &s,uint32_t now) {
@@ -230,7 +236,7 @@ void focusPage(const State &s,uint32_t now) {
 bool enabled(planter::Action action,const State &s,uint32_t now) {
   const bool available=planter::fresh(s,now) && !s.commandBlocked && clientReady;
   switch(action) {
-    case planter::Action::Water:return available && s.pumpEnabled && !s.pumpOn;
+    case planter::Action::Water:return available && s.pumpEnabled && s.waterAllowed && !s.pumpOn;
     case planter::Action::StopWater:return clientReady && s.wifi && s.pumpEnabled;
     case planter::Action::Light:return available && s.lightEnabled;
     case planter::Action::Print:return available && s.printerEnabled && strcmp(s.printerStatus,"recovery_required");
@@ -246,6 +252,11 @@ const char *disabledReason(planter::Action action,const State &s,uint32_t now) {
   if(s.commandBlocked)return tr("正在执行上次操作","Previous action busy");
   if(action==planter::Action::Print)return tr("打印机尚未启用","Printer disabled");
   if(action==planter::Action::Light)return tr("灯带尚未启用","Light disabled");
+  if(action==planter::Action::Water && s.pumpEnabled && !s.waterAllowed) {
+    if(!strcmp(s.waterBlockReason,"tank_uncalibrated"))return tr("请先校准水位","Calibrate tank first");
+    if(!strcmp(s.waterBlockReason,"tank_low"))return tr("水位低，请加水","Tank low / refill");
+    return tr("请检查水位传感器","Check tank sensor");
+  }
   return s.pumpOn?tr("水泵正在运行","Pump is running"):tr("水泵尚未启用","Pump disabled");
 }
 const char *commandLabel(const State &s) {
