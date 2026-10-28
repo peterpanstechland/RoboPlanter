@@ -328,6 +328,30 @@ bool saveBrightness(uint8_t percent) {
   return true;
 }
 WifiSnapshot wifiState() { if (!initialized) return WifiSnapshot(); Guard guard; return state; }
+PlanterEndpoint planterEndpoint() {
+  PlanterEndpoint result;
+  copy(result.ssid, PLANTER_WIFI_SSID);
+  // Show only the origin. Even a mistakenly configured URL containing userinfo
+  // or a query must not expose it on the display.
+  const char *url = PLANTER_BASE_URL;
+  const char *scheme = strstr(url, "://");
+  if (scheme && (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8))) {
+    const char *host = scheme + 3;
+    const char *end = host + strcspn(host, "/?#");
+    for (const char *p = host; p < end; ++p) if (*p == '@') host = p + 1;
+    const size_t prefix = static_cast<size_t>(scheme + 3 - url);
+    const size_t hostBytes = static_cast<size_t>(end - host);
+    if (prefix < 10 && prefix + hostBytes < sizeof(result.address) && hostBytes) {
+      memcpy(result.address, url, prefix);
+      memcpy(result.address + prefix, host, hostBytes);
+      result.address[prefix + hostBytes] = 0;
+    }
+  }
+  result.configured = result.address[0] && PLANTER_DEVICE_TOKEN[0] &&
+                      strcmp(PLANTER_DEVICE_TOKEN, "change-me-before-use") &&
+                      strcmp(PLANTER_WIFI_SSID, "RoboPlanter-XXXX");
+  return result;
+}
 bool requestScan() {
   if (!initialized) return false;
   Guard guard;

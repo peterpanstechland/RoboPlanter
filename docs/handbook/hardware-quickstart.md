@@ -340,7 +340,7 @@ export ROBOPLANTER_TOKEN
 "$rp_python" tools/device_cli.py result '<刚才的ID>'
 ```
 
-等待 `accepted → completed`，同时人工确认纸上文本正确。`bytes_sent` / `completed` 只证明软件串口发送完成，不证明出纸。请求支持最多 160 字节可打印 ASCII 和 LF；固件添加固定 ESC/POS 初始化及末尾走纸，不接受调用方传入控制码。不支持中文编码、切刀或缺纸反馈。超时或乱码先排查，不能自动重印。
+等待 `accepted → completed`，同时人工确认纸上文本正确。`bytes_sent` / `completed` 只证明软件串口发送完成，不证明出纸。请求支持最多 160 字节 UTF-8（ASCII、GB2312 映射字符及 LF），自动换行最多 8 行；固件转换为 384 点光栅，添加固定初始化、走纸和可选切刀指令，不接受调用方传入控制码。切刀须显式设置 `ROBO_PRINTER_CUTTER_CONFIRMED 1`；缺纸或机械完成反馈尚未实现。超时或乱码先排查，不能自动重印。
 
 ### 8.6 水泵最后接入
 

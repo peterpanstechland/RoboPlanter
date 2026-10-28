@@ -35,5 +35,6 @@
 #define ROBO_ENABLE_PRINTER 0 // Confirm TTL voltage and ESC/POS text protocol.
 #define ROBO_PRINTER_HARDWARE_CONFIRMED 0
 #define ROBO_PRINTER_D8_WIRING_CONFIRMED 0 // Printer RX -> SERVO4 D8/GPIO7; no pump/servo there.
+#define ROBO_PRINTER_CUTTER_CONFIRMED 0 // Confirm an autocutter: ESC d 6, then GS V 0.
 // Printer TX -> J10 RX/GPIO44 only after confirming 3.3V logic or level shifting.
 #define ROBO_PRINTER_BAUD 9600

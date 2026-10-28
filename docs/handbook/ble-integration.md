@@ -19,7 +19,7 @@ YOYO → 手机官方蓝牙工具 → XIAO BLE 是主链路。Indicator → Wi-F
 - Characteristic UUID：`a2f39c11-7e4b-4d21-8a61-0f3bc9d15001`。
 - 特征能力：**Write With Response + Notify**。不提供 Read，不使用 Write Without Response。
 - 先订阅同一特征的通知，再写入。每个连接需要自己的订阅。
-- 请求是一个完整 ASCII 文本，最多 **240 字节**；每条请求带设备令牌；分隔符是 `|`。不加 `\0`、CR/LF 或 `$` 结尾。
+- 请求是一个完整 UTF-8 文本（协议字段使用 ASCII，打印正文可用新版固件字库中的中文），最多 **240 字节**；每条请求带设备令牌；分隔符是 `|`。不加 `\0`、CR/LF 或 `$` 结尾。
 - BLE 动作 ID 为 **1–8 个 ASCII 字母、数字、`_`、`-`**。HTTP 可达 32 字符；HTTP 的 32 字符随机 ID 不能原封不动写入 BLE 动作字段。
 - 固件偏好 MTU=247，但最终 MTU 由手机/系统协商。回复始终是单条不超过 **20 字节**的通知，客户端不应拼接旧通知猜测结果。
 - 只允许一个 BLE 命令连接。测试应用占着连接时，YOYO 可能连不上；测试完主动断开，再测试下一客户端。
@@ -104,7 +104,7 @@ R|token|id        -> A:id / D:id / E:id:code
 
 - `device_name`：真实广播名称原文。`device_address` 可选；只填写实际验证过的地址，不凭印象生成。
 - `service_uuid` / `characteristic_uuid`：使用第 2 节的完整 UUID，不采用示例 `FFE0/FFE1`。
-- `encoding`：`utf-8`；当前业务协议限定 ASCII。
+- `encoding`：`utf-8`；协议字段为 ASCII；新版固件打印正文支持 UTF-8 字库字符，字节数限制保持不变。
 - `ack_type`：`ack`。官方定义这是 Write With Response，与业务回包等待独立。
 - `expect_response`：`true`。必须取得设备业务响应。
 - `response_timeout_ms`：先用 `3000`；官方范围为 100–60000 ms。加长超时不能修复请求被截断或没有通知订阅。
@@ -148,7 +148,7 @@ R|token|id        -> A:id / D:id / E:id:code
 C|token|id|light|1       柔绿常亮
 C|token|id|light|1|breath 慢呼吸（也可 solid / chase / rainbow）
 C|token|id|light|0       关灯
-C|token|id|print|text    ASCII 打印
+C|token|id|print|text    UTF-8 点阵打印（禁止正文包含 |）
 C|token|id|water|500     单次 500 ms 泵脉冲
 C|token|id|stop_water    立即请求停泵
 ```
@@ -158,7 +158,7 @@ C|token|id|stop_water    立即请求停泵
 每次**新的用户动作意图**分配新 ID。轮询结果使用原 ID；不能把新的 ID 当作处理超时的方法。同 ID 同内容返回保存结果而不再次执行；同 ID 不同内容返回 `ID`。水泵和打印机互斥，忙时也会记住拒绝结果，解决忙碌后若用户明确发起新意图才分配新 ID。
 
 1. **灯**：先 `S|token|light` 确认 enabled=1。用户明确开灯 → 一条 `C` → 匹配 `D:id` → 再查灯状态 → 实看灯。验证重复同 ID 不出现额外动作。
-2. **打印**：明确授权短 ASCII 文本 → 收到 `A:id` → 用 `R|token|id` 查询。`D:id` 后人工确认出纸。中文聊天不受限制，但当前硬件打印文本不支持中文或 ESC/POS 控制码。
+2. **打印**：明确授权短 ASCII 文本 → 收到 `A:id` → 用 `R|token|id` 查询。`D:id` 后人工确认出纸。新版硬件固件也支持中文点阵正文，见 [打印教程](uart-printer.md)；旧固件仍只支持 ASCII。正文禁止 ESC/POS 控制码及协议分隔符。公开 YOYO Skill 的权限与发布状态不随固件升级自动改变。
 3. **水泵**：台架容器与物理断电就绪、短脉冲上限已配好 → 明确 500 ms 指令 → `A:id` → 原 ID 查询直到结果有界结束 → 实测自动停止。默认泵上限 3000 ms，实际以该次固件 `ROBO_MAX_WATER_MS` 为准，不能拆多次绕过上限。
 4. **停泵**：单独的新 ID 和 `stop_water`，最高优先发送，不等传感器/结果查询。固件允许已鉴权的停泵在动作禁用或缓存满时使用，但客户端仍须具备可用连接。停泵结果未知时立即提示现场物理断电/检查，不能说已停。
 

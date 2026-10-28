@@ -14,7 +14,7 @@
 
 namespace {
 using namespace planter;
-struct Command { Action action; bool on; char id[33]; uint32_t networkRevision; };
+struct Command { Action action; bool on; char id[33]; uint32_t networkRevision; PrintReceipt receipt; };
 State shared;
 SemaphoreHandle_t lock = nullptr;
 QueueHandle_t commands = nullptr, stops = nullptr;
@@ -28,9 +28,11 @@ bool terminal(const char *status) {
          !strcmp(status, "rejected") || !strcmp(status, "cancelled") ||
          !strcmp(status, "stopped");
 }
-void networkError(const char *message) {
+void networkError(const char *message, NetworkFailure failure = NetworkFailure::Http, int status = 0) {
   xSemaphoreTake(lock, portMAX_DELAY);
   copy(shared.networkError, message);
+  shared.networkFailure = failure;
+  shared.httpStatus = static_cast<int16_t>(status);
   shared.wifi = device_settings::planterNetworkReady();
   xSemaphoreGive(lock);
 }
@@ -90,18 +92,18 @@ void pollState() {
   WiFiClient client;
   HTTPClient http;
   if (!configureHttp(http, client, "/api/v1/state")) {
-    networkError("Invalid HTTP configuration"); return;
+    networkError("Invalid HTTP configuration", NetworkFailure::Configuration); return;
   }
   const int code = http.GET();
   if (code != 200) {
     char message[80];
     snprintf(message, sizeof(message), "State HTTP %d%s", code,
              code == 401 || code == 403 ? " - check token" : "");
-    networkError(message); http.end(); return;
+    networkError(message, code == 401 || code == 403 ? NetworkFailure::Authentication : NetworkFailure::Http, code); http.end(); return;
   }
   const int length = http.getSize();
   if (length < 0 || length > 4096) {
-    networkError("Unexpected state body length"); http.end(); return;
+    networkError("Unexpected state body length", NetworkFailure::InvalidState); http.end(); return;
   }
   const String body = http.getString();
   http.end();
@@ -110,10 +112,11 @@ void pollState() {
   const auto error = deserializeJson(doc, body);
   if (error || !doc["schema_version"].is<int>() || doc["schema_version"].as<int>() != 1 ||
       !doc["device_id"].is<const char *>()) {
-    networkError("Invalid or unsupported state schema"); return;
+    networkError("Invalid or unsupported state schema", NetworkFailure::InvalidState); return;
   }
   State next;
   next.received = next.wifi = true;
+  next.httpStatus = 200;
   next.receivedMs = millis();
   next.networkRevision = requestNetwork;
   copy(next.deviceId, doc["device_id"]);
@@ -144,6 +147,8 @@ void pollState() {
   next.printerKnown = printer["enabled"].is<bool>() && printer["status"].is<const char *>();
   next.printerEnabled = next.printerKnown && printer["enabled"].as<bool>();
   if (next.printerKnown) copy(next.printerStatus, printer["status"]);
+  next.printerRaster = next.printerKnown && !strcmp(printer["text_format"] | "", "utf8-raster");
+  next.printerAutocut = next.printerKnown && printer["autocut"].is<bool>() && printer["autocut"].as<bool>();
 
   xSemaphoreTake(lock, portMAX_DELAY);
   copy(next.requestId, shared.requestId);
@@ -241,6 +246,10 @@ void sendCommand(const Command &command) {
   if (!enabled || (!stop && !planter::fresh(state, millis()))) {
     commandResult(command.id, "not_sent", "Unavailable or stale device state", false); return;
   }
+  if (command.action == Action::Print && (!strcmp(state.printerStatus, "recovery_required") ||
+      (command.receipt.requiresRaster && !state.printerRaster))) {
+    commandResult(command.id, "not_sent", "Printer needs recovery or a new preview", false); return;
+  }
   StaticJsonDocument<512> doc;
   doc["request_id"] = command.id;
   switch (command.action) {
@@ -252,7 +261,7 @@ void sendCommand(const Command &command) {
     case Action::Light: doc["action"] = "light"; doc["on"] = command.on; break;
     case Action::Print:
       doc["action"] = "print";
-      doc["text"] = "RoboPlanter\nManual garden check-in.\nObserve your plant before watering.\n";
+      doc["text"] = command.receipt.text;
       break;
   }
   String body;
@@ -377,21 +386,25 @@ State snapshot() {
   return out;
 }
 bool fresh(const State &state, uint32_t now) {
-  return state.received && state.wifi && state.ageKnown &&
+  return state.received && state.wifi && state.ageKnown && state.networkFailure == NetworkFailure::None &&
          state.networkRevision == device_settings::networkRevision() && device_settings::planterNetworkReady() &&
          static_cast<uint64_t>(now - state.receivedMs) + state.sampleAgeMs <= kStaleMs;
 }
-bool submit(Action action, bool lightOn) {
+bool submit(Action action, bool lightOn, const PrintReceipt *receipt) {
   if (!lock || !commands || !stops) return false;
+  if (action == Action::Print && (!receipt || !receipt->text[0] || !memchr(receipt->text, 0, sizeof(receipt->text)))) return false;
   xSemaphoreTake(lock, portMAX_DELAY);
   const bool stop = action == Action::StopWater;
   const bool enabled = (action == Action::Water || stop) ? shared.pumpEnabled :
                        action == Action::Light ? shared.lightEnabled : shared.printerEnabled;
   if (!enabled || !shared.wifi || shared.networkRevision != device_settings::networkRevision() ||
-      !device_settings::planterNetworkReady() || (!stop && (!fresh(shared, millis()) || shared.commandBlocked))) {
+      !device_settings::planterNetworkReady() || (!stop && (!fresh(shared, millis()) || shared.commandBlocked)) ||
+      (action == Action::Print && (!strcmp(shared.printerStatus, "recovery_required") ||
+       (receipt->requiresRaster && !shared.printerRaster)))) {
     xSemaphoreGive(lock); return false;
   }
-  Command command{action, lightOn, {}, device_settings::networkRevision()};
+  Command command{action, lightOn, {}, device_settings::networkRevision(), {}};
+  if (action == Action::Print) command.receipt = *receipt;
   // Acquire under the settings lock after the checks above: a concurrent UI
   // network change either wins first (STOP rejected) or waits for this STOP.
   // Client -> settings is the only nested lock order. Duplicate pending STOPs

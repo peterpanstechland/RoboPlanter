@@ -15,6 +15,7 @@
 
 #include "controller.h"
 #include "printer_receipt.h"
+#include "printer_transport.h"
 #include "ble_session.h"
 #include "robo_config.h"
 #include "remote_soil.h"
@@ -235,19 +236,29 @@ void printerTask(void*) {
   for (;;) {
     if (xQueueReceive(printQueue, &job, portMAX_DELAY) != pdTRUE) continue;
     const uint32_t started = millis();
+    const uint32_t budget = robo::printerTransmitBudgetMs(
+        robo::plannedReceiptBytes(job.text, ROBO_PRINTER_CUTTER_CONFIRMED), ROBO_PRINTER_BAUD);
     // Transmission is bounded and occurs in this low priority task. It never
     // holds the controller mutex or delays the independent pump deadline task.
     const auto writeByte = [&](uint8_t byte) {
-      if (millis() - started >= 5000) return false;
-      while (printerSerial.availableForWrite() < 1) {
-        if (millis() - started >= 5000) return false;
+      // Arduino Print::write always reports one byte even on driver errors.
+      // The UART is configured without a TX ring buffer; use nonblocking FIFO
+      // writes so every attempt remains under this job's deadline.
+      while (millis() - started < budget) {
+        const int written = uart_tx_chars(UART_NUM_1, reinterpret_cast<const char*>(&byte), 1);
+        if (written == 1) return true;
+        if (written < 0) return false;
         vTaskDelay(pdMS_TO_TICKS(1));
       }
-      return printerSerial.write(byte) == 1;
+      return false;
     };
-    bool success = ROBO_ENABLE_PRINTER && robo::writeReceipt(job.text, writeByte);
-    if (success)
-      success = uart_wait_tx_done(UART_NUM_1, pdMS_TO_TICKS(5000)) == ESP_OK;
+    bool success = ROBO_ENABLE_PRINTER && budget &&
+                   robo::writeReceipt(job.text, writeByte, ROBO_PRINTER_CUTTER_CONFIRMED);
+    if (success) {
+      const uint32_t elapsed = millis() - started;
+      success = elapsed < budget &&
+                uart_wait_tx_done(UART_NUM_1, pdMS_TO_TICKS(budget-elapsed)) == ESP_OK;
+    }
     {
       Lock guard(coreMutex);
       controller.finishPrint(job.id, success);
@@ -331,6 +342,12 @@ void stateJson(JsonDocument& document) {
   JsonObject printer = document.createNestedObject("printer");
   printer["enabled"] = ROBO_ENABLE_PRINTER && ActionsReady;
   printer["status"] = std::string(controller.printerStatus());
+  printer["text_format"] = "utf8-raster";
+  printer["paper_width_dots"] = 384;
+  printer["autocut"] = static_cast<bool>(ROBO_PRINTER_CUTTER_CONFIRMED);
+  // The sample documents transport/cutter commands, not a status response.
+  // Do not report paper, blade or physical completion from a UART write.
+  printer["feedback"] = "unavailable";
   JsonObject last = document.createNestedObject("last_command");
   const robo::Result& result = controller.last();
   last["request_id"] = result.requestId;
@@ -510,7 +527,7 @@ const char* shortError(const std::string& error) {
   if (error == "request_id_conflict") return "ID";
   if (error == "idempotency_cache_full") return "FULL";
   if (error == "invalid_duration") return "TIME";
-  if (error == "printer_write_failed") return "IO";
+  if (error == "printer_write_failed" || error == "printer_recovery_required") return "IO";
   if (error == "unknown_action") return "ACT";
   return "ARG";
 }
@@ -555,7 +572,7 @@ std::string bleQuery(const std::string& field) {
   if (field == "printer") {
     const std::string status = controller.printerStatus();
     const char* label = status == "disabled" ? "off" : status == "bytes_sent" ? "sent" :
-                        status == "write_failed" ? "fail" : status.c_str();
+                        (status == "write_failed" || status == "recovery_required") ? "fail" : status.c_str();
     snprintf(buffer, sizeof(buffer), "T:%d:%s", ROBO_ENABLE_PRINTER && ActionsReady ? 1 : 0, label);
     return buffer;
   }
@@ -760,7 +777,7 @@ void setup() {
     if (!printerSerial) failClosed("Startup failed: printer UART unavailable");
   }
   if (xTaskCreate(sensorTask, "sensors", 4096, nullptr, 1, nullptr) != pdPASS ||
-      xTaskCreate(printerTask, "printer", 4096, nullptr, 1, nullptr) != pdPASS ||
+      xTaskCreate(printerTask, "printer", 6144, nullptr, 1, nullptr) != pdPASS ||
       (ROBO_ENABLE_LIGHT && xTaskCreate(lightTask, "light-frames", 3072, nullptr, 1, nullptr) != pdPASS) ||
       xTaskCreate(bleTask, "ble-commands", 6144, nullptr, 2, nullptr) != pdPASS)
     failClosed("Startup failed: worker task unavailable");

@@ -1,5 +1,6 @@
 #include "settings_ui.h"
 #include "device_settings.h"
+#include "planter_presentation.h"
 #include "indicator_board.h"
 #include "ui_text.h"
 #include "ui_theme.h"
@@ -11,10 +12,11 @@ namespace {
 using device_settings::Language;
 using device_settings::WifiError;
 using device_settings::WifiPhase;
-enum class Page : uint8_t { Menu, Wifi, Password, About };
+enum class Page : uint8_t { Menu, Wifi, Password, About, Planter };
 struct Rect { int16_t x, y, w, h; };
 constexpr Rect kChinese{24, 117, 208, 48}, kEnglish{248, 117, 208, 48};
-constexpr Rect kWifi{16, 181, 448, 76}, kAbout{16, 394, 448, 54};
+constexpr Rect kWifi{16, 181, 448, 76}, kPlanter{16, 394, 216, 54}, kAbout{248, 394, 216, 54};
+constexpr Rect kPairedNetwork{24, 411, 208, 52}, kNetworkSettings{248, 411, 208, 52};
 constexpr Rect kMinus{24, 321, 56, 56}, kSlider{96, 321, 288, 56}, kPlus{400, 321, 56, 56};
 constexpr Rect kRefresh{16, 422, 100, 48}, kPrevious{124, 422, 64, 48};
 constexpr Rect kNext{196, 422, 64, 48}, kDefault{268, 422, 196, 48};
@@ -128,7 +130,7 @@ void showWifi() {
   wipePassword(); page = Page::Wifi; listLoaded = false; networkPage = 0;
   const auto state = device_settings::wifiState();
   syncList(state);
-  if (state.ready && !state.scanning && !state.networkCount) beginScan();
+  if (state.ready && state.phase != WifiPhase::Connecting && !state.scanning && !state.networkCount) beginScan();
 }
 bool validPassword() {
   if (!secureNetwork) return passwordLength == 0;
@@ -166,9 +168,8 @@ void drawMenu(const ui_theme::Theme &t) {
   g.fillRoundRect(96, 344, 288, 10, 5, t.outline);
   g.fillRoundRect(96, 344, knob - 96 + 1, 10, 5, t.accent);
   g.fillCircle(knob, 349, 10, t.accent);
-  g.fillRoundRect(kAbout.x, kAbout.y, kAbout.w, kAbout.h, 12, t.surface);
-  text(32, 406, tr("关于设备", "About this device"), t.ink, 24, 372);
-  text(428, 406, ">", t.ink, 24, 24);
+  button(kPlanter, tr("花盆连接", "Planter connection"), t, false, true, 16);
+  button(kAbout, tr("关于设备", "About device"), t, false, true, 16);
   if (settingsRejected || state.error == WifiError::StorageUnavailable)
     text(24, 455, tr("设置未能保存", "Settings could not be saved"), t.muted, 16);
 }
@@ -240,6 +241,29 @@ void drawAbout(const ui_theme::Theme &t) {
   text(32, 355, tr("其他 Wi-Fi 不等于已连接花盆", "Joining Wi-Fi does not connect the planter"), t.muted, 16, 416);
   text(32, 389, tr("设置仅在本机生效", "Settings apply to this display"), t.muted, 16, 416);
 }
+void drawPlanter(const ui_theme::Theme &t, uint32_t now) {
+  const auto wifi = device_settings::wifiState();
+  const auto endpoint = device_settings::planterEndpoint();
+  const auto state = planter::snapshot();
+  const bool english = device_settings::getLanguage() == Language::English;
+  const auto status = endpoint.configured ? planter_presentation::link(state, wifi, now) : planter_presentation::Link::Configuration;
+  text(24, 82, planter_presentation::linkText(status, english), t.ink, 24);
+  text(24, 122, tr("配对网络", "Paired network"), t.muted, 16);
+  text(24, 145, endpoint.ssid[0] ? endpoint.ssid : "--", t.ink, 24);
+  text(24, 184, tr("当前网络", "Current network"), t.muted, 16);
+  text(24, 207, wifi.connectedSsid[0] ? wifi.connectedSsid : tr("未连接", "Not connected"), t.ink, 24);
+  text(24, 246, tr("花盆地址", "Planter address"), t.muted, 16);
+  text(24, 269, endpoint.address[0] ? endpoint.address : "--", t.ink, 16);
+  char detail[64];
+  snprintf(detail, sizeof(detail), "HTTP %d", static_cast<int>(state.httpStatus));
+  text(24, 302, state.httpStatus ? detail : tr("尚未收到有效响应", "No verified response yet"), t.muted, 16);
+  const bool rePair = !endpoint.configured || status == planter_presentation::Link::Authentication;
+  text(24, 341, rePair ? tr("连接电脑，重新配对地址和令牌", "Use the computer pairing tool to relink") :
+       tr("先检查花盆供电与配对网络", "Check planter power and paired Wi-Fi"), t.ink, 16);
+  text(24, 372, tr("切换其他网络不会发送花盆令牌", "No planter token is sent on other Wi-Fi"), t.muted, 16);
+  button(kPairedNetwork, tr("连接配对网络", "Use paired Wi-Fi"), t, false, wifi.ready, 16);
+  button(kNetworkSettings, tr("无线网络设置", "Wi-Fi settings"), t, false, true, 16);
+}
 void brightness(uint8_t value) {
   indicator::setBrightness(value);
   settingsRejected = !device_settings::saveBrightness(indicator::brightness());
@@ -260,10 +284,11 @@ const char *title() {
     case Page::Wifi: return tr("无线网络", "Wi-Fi");
     case Page::Password: return tr("连接网络", "Join network");
     case Page::About: return tr("关于设备", "About device");
+    case Page::Planter: return tr("花盆连接", "Planter connection");
     default: return tr("设备设置", "Settings");
   }
 }
-void draw(uint32_t /*now*/, uint8_t themeId) {
+void draw(uint32_t now, uint8_t themeId) {
   if (!opened) return;
   const auto &t = ui_theme::get(themeId);
   indicator::display().fillRect(0, 76, 480, 400, t.background);
@@ -272,6 +297,7 @@ void draw(uint32_t /*now*/, uint8_t themeId) {
     case Page::Wifi: drawWifi(t); break;
     case Page::Password: drawPassword(t); break;
     case Page::About: drawAbout(t); break;
+    case Page::Planter: drawPlanter(t, now); break;
   }
 }
 bool handle(ui::Gesture gesture, const ui::TouchGate &touch, uint32_t /*now*/) {
@@ -282,9 +308,15 @@ bool handle(ui::Gesture gesture, const ui::TouchGate &touch, uint32_t /*now*/) {
     else if (tapped(kEnglish, touch)) settingsRejected = !device_settings::setLanguage(Language::English);
     else if (tapped(kWifi, touch)) showWifi();
     else if (tapped(kAbout, touch)) page = Page::About;
+    else if (tapped(kPlanter, touch)) page = Page::Planter;
     else if (tapped(kMinus, touch)) brightness(indicator::brightness() > 10 ? indicator::brightness() - 5 : 5);
     else if (tapped(kPlus, touch)) brightness(indicator::brightness() < 95 ? indicator::brightness() + 5 : 100);
     else if (tapped(kSlider, touch)) brightness(static_cast<uint8_t>(5 + (touch.lastX() - 96) * 95 / 287));
+  } else if (page == Page::Planter) {
+    if (tapped(kNetworkSettings, touch)) showWifi();
+    else if (tapped(kPairedNetwork, touch) && device_settings::wifiState().ready) {
+      if (device_settings::restoreDefaultWifi()) showWifi();
+    }
   } else if (page == Page::Wifi) {
     const auto state = device_settings::wifiState();
     if (tapped(kRefresh, touch) && state.ready && !state.scanning) beginScan();

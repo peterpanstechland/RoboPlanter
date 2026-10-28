@@ -37,7 +37,7 @@ These assignments follow the supplied `XIAO Robot Board_V1.0.pdf`, especially pa
 | UV sensor (experimental spare) | GPIO9 / D10 / M2 encoder B | Encoder must be disconnected. Board has a **4.7 kΩ pull-up to 3.3 V**, which loads an analog sensor and changes its transfer curve. Disabled by default; not a validated UV measurement or recommended final wiring. |
 | SHT31 | SDA GPIO5 / D4, SCL GPIO6 / D5 | Optional SHT31 at address 0x44 (configurable). Genuine temperature/humidity and CRC checks; this is not an autodriver for unspecified Grove DHT/AHT sensors. |
 | WS2812 strip | GPIO40 / D13 / Grove RGB | Optional GRB 800 kHz strip, configurable count and limited brightness; solid green, four-second breathing, green chase and twelve-second rainbow modes. Not a photosynthetically calibrated grow light. |
-| Thermal printer | TX: GPIO7 / D8 / SERVO4 J14 pin 1; RX: GPIO44 / D7 / UART J10 pin 2 | Hardware UART 8N1. Requires `ROBO_ENABLE_PRINTER`, `ROBO_PRINTER_HARDWARE_CONFIRMED` and `ROBO_PRINTER_D8_WIRING_CONFIRMED`. No pump/servo on SERVO4; pump and printer cannot both be enabled. At most 160 ASCII/LF bytes with fixed ESC/POS initialization/feed. Model-specific status queries are not implemented. |
+| Thermal printer | TX: GPIO7 / D8 / SERVO4 J14 pin 1; RX: GPIO44 / D7 / UART J10 pin 2 | Hardware UART 8N1. Requires `ROBO_ENABLE_PRINTER`, `ROBO_PRINTER_HARDWARE_CONFIRMED` and `ROBO_PRINTER_D8_WIRING_CONFIRMED`. No pump/servo on SERVO4; pump and printer cannot both be enabled. At most 160 UTF-8 bytes (ASCII/GB2312 glyphs and LF), eight wrapped lines, 384-dot raster output and optional confirmed cutter. Model-specific status queries are not implemented. |
 
 On the supplied V1.0 schematic, J13/J14/J5 pin 1 is the signal, pin 2 is NC, pin 3 is Motor5V, and pin 4 is GND. The firmware does not use Motor5V as a sensor supply. I²C J11/J12 pin 1 is SCL GPIO6, pin 2 SDA GPIO5, pin 3 3.3 V, pin 4 GND. UART J10 pin 1 is TX43, pin 2 RX44, pin 3 3.3 V, pin 4 GND. Verify the exact board revision before using these references.
 
@@ -61,7 +61,7 @@ A printer's **12 V supply rating does not specify its TTL voltage**. Confirm bau
 
 **Printer TX uses SERVO4:** power off, connect printer RX to J14 pin 1 / D8 / GPIO7, and disconnect any pump or servo from SERVO4. Printer TX may connect to J10 pin 2 / GPIO44 only after confirming 3.3V logic or adding level shifting. Connect common GND; do not use either connector power pin. GPIO43 remains disconnected from the printer to avoid ROM boot messages. D8 starts HIGH in printer builds, and pump/printer simultaneous enable is rejected at compile time. UART reception is configured, but printer status querying/decoding is not implemented yet. The earlier GPIO44 transmit-only proposal is superseded. See the [printer guide](../../docs/handbook/uart-printer.md).
 
-Only an explicit confirmed print command writes printer bytes. Each receipt uses ESC/POS reset, normal font, left alignment and default line spacing, followed by validated ASCII/LF text and three feed lines (plus a line terminator if missing). Callers cannot inject control commands. Write failure stops the job; it is never automatically retried.
+Only an explicit confirmed print command writes printer bytes. Each receipt uses ESC/POS reset, 384-dot GS v 0 raster bands, and ESC d 6 feed. Set `ROBO_PRINTER_CUTTER_CONFIRMED=1` only for compatible verified autocutter hardware to append GS V 0. The 24px bitmap font covers 7,540 ASCII/GB2312 characters; full input validation rejects unsupported glyphs, invalid UTF-8, controls, more than 160 bytes, or more than eight wrapped lines before output. Callers cannot inject printer commands. The nonblocking UART deadline covers raster transmission and drain at the configured baud rate. Any write/drain failure sets `recovery_required` and rejects new print jobs until restart; inspect the result and restart both printer and controller to clear partial raster state. Never automatically replay an uncertain job.
 
 The current D8 wiring permits either pump or printer, never both enabled. The controller also retains an action interlock for a future separately wired pump. This does not replace a correctly sized supply. The local pump cap defaults to 3,000 ms and may be set to 1–30,000 ms only after measuring flow. A priority-10 FreeRTOS task checks the pump deadline every 10 ms; HTTP processing, sensor delays and printing do not hold that task's mutex. This is software timing with scheduler/GPIO jitter, not a certified hardware cutoff. A frozen MCU, failed driver or stuck relay requires separate hardware protection.
 
@@ -87,7 +87,7 @@ At boot the board creates `RoboPlanter-XXXX` (MAC-derived suffix), default Wi-Fi
   "environment": {"temperature_c": null, "humidity_pct": null, "valid": false},
   "pump": {"enabled": false, "on": false, "remaining_ms": 0},
   "light": {"enabled": false, "on": false, "effect": "solid"},
-  "printer": {"enabled": false, "status": "disabled"},
+  "printer": {"enabled": false, "status": "disabled", "text_format": "utf8-raster", "paper_width_dots": 384, "autocut": false, "feedback": "unavailable"},
   "last_command": {"request_id": "", "status": "none", "error": ""}
 }
 ```
@@ -108,7 +108,7 @@ Values above show schema/defaults, not a captured device reading. Sensors are sa
 
 A priority-1 task renders every 40 ms without holding the controller mutex during NeoPixel output. OFF clears the strip synchronously before the command returns; it does not wait for an animation cycle. All modes keep the configured brightness cap. A one-LED chase falls back to breathing. Lights start OFF after reboot, are not persisted, and retain their mode on a network disconnection. Timing and power must still be checked on real hardware. See the [lighting tutorial](../../docs/handbook/ws2812-lighting.md).
 
-Responses are `{ "ok": true|false, "request_id": "...", "status": "accepted"|"completed"|"rejected", "error": "..." }`. Water and queued print return 202/accepted. Stop/light return 200/completed. Invalid or rejected commands return a 4xx response. Printing accepts printable ASCII and LF; raw control codes and unverified multibyte encodings are rejected.
+Responses are `{ "ok": true|false, "request_id": "...", "status": "accepted"|"completed"|"rejected", "error": "..." }`. Water and queued print return 202/accepted. Stop/light return 200/completed. Invalid or rejected commands return a 4xx response. Printing accepts strictly validated UTF-8 from the included ASCII/GB2312 bitmap font and LF; raw control codes, unmapped glyphs and malformed encodings are rejected before output.
 
 `GET /api/v1/result?request_id=dose001` uses the same token header and looks up that request without executing it again. A found record returns HTTP 200 with the same result structure, whether accepted, completed or rejected. An unknown ID returns 404 with `error:"request_not_found"` and the requested ID; an invalid ID returns 400. Poll this endpoint for a specific pending command, because another client's command may replace `state.last_command`. Retrying the **same** POST also retrieves its saved result, but must not be used to replay an uncertain action across a device restart.
 
@@ -145,9 +145,9 @@ The plain HTTP service is local and has no TLS. The network/token model is inten
 | `C\|token\|id\|stop_water` | `D:id` or error | Authenticated stop; available even with actions disabled. |
 | `C\|token\|id\|light\|1` | `D:id` or error | Use `1` for on, `0` for off. |
 | `C\|token\|id\|light\|1\|breath` | `D:id` or error | Optional sixth field: `solid`, `breath`, `chase`, `rainbow`; only with `1`. |
-| `C\|token\|id\|print\|Hello plant` | `A:id` or error | ASCII only; at most 160 text bytes and 240 total request bytes. |
+| `C\|token\|id\|print\|Hello plant` | `A:id` or error | UTF-8 from the included font; at most 160 text bytes and 240 total request bytes; no pipe delimiter inside text. |
 
-`A` means accepted/pending, `D` means completed. Command errors are `E:id:code`; malformed or unauthenticated messages can return `E:FORMAT`, `E:AUTH`, `E:SIZE`, `E:FIELD`, or `E:BUSY` without an ID. `E:STALE` means the sensor sampling cycle is older than 3 seconds; do not interpret that response as a current measurement. Business codes: `LOCK` actions/token not configured; `OFF` peripheral disabled; `BUSY` pump/printer busy; `ID` reused ID with conflicting payload; `FULL` dedupe cache full; `TIME` invalid duration; `IO` UART transmit failed; `ACT` unknown action; `ARG` invalid fields; `MISS` lookup not found. The characteristic is not readable, so a different client cannot read a previous notification from an unauthenticated read operation.
+`A` means accepted/pending, `D` means completed. Command errors are `E:id:code`; malformed or unauthenticated messages can return `E:FORMAT`, `E:AUTH`, `E:SIZE`, `E:FIELD`, or `E:BUSY` without an ID. `E:STALE` means the sensor sampling cycle is older than 3 seconds; do not interpret that response as a current measurement. Business codes: `LOCK` actions/token not configured; `OFF` peripheral disabled; `BUSY` pump/printer busy; `ID` reused ID with conflicting payload; `FULL` dedupe cache full; `TIME` invalid duration; `IO` UART transmit failed or printer recovery required; `ACT` unknown action; `ARG` invalid fields; `MISS` lookup not found. The characteristic is not readable, so a different client cannot read a previous notification from an unauthenticated read operation.
 
 ## Bring-up and verification
 

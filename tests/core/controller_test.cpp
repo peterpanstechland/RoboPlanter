@@ -2,9 +2,11 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <vector>
 #include "../../firmware/xiao/include/controller.h"
 #include "../../firmware/xiao/include/ble_session.h"
 #include "../../firmware/xiao/include/printer_receipt.h"
+#include "../../firmware/xiao/include/printer_transport.h"
 
 namespace {
 int checks = 0;
@@ -225,11 +227,16 @@ void printerAndCalibration() {
   CHECK(c.submit(print("escape", std::string("x\x1b") + "@"), 0).error == "invalid_print_text");
   CHECK(c.submit(print("empty", ""), 0).error == "invalid_print_text");
   CHECK(c.submit(print("long", std::string(161, 'x')), 0).error == "invalid_print_text");
-  CHECK(c.submit(print("utf8", "\xe6\xa4\x8d\xe7\x89\xa9"), 0).error == "invalid_print_text");
+  CHECK(c.submit(print("utf8", "\xe6\xa4\x8d\xe7\x89\xa9"), 0).ok);
+  c.finishPrint("utf8", true);
   CHECK(c.submit(print("failure", "Receipt"), 0).ok);
   c.finishPrint("failure", false);
   CHECK(c.submit(print("failure", "Receipt"), 1).error == "printer_write_failed");
   CHECK(!c.printerBusy());
+  CHECK(std::string(c.printerStatus()) == "recovery_required");
+  CHECK(c.submit(print("after-failure", "Another receipt"), 2).error == "printer_recovery_required");
+  CHECK(!c.printerBusy());
+  CHECK(std::string(c.printerStatus()) == "recovery_required");
   CHECK(!robo::calibrated(-1, -1)); CHECK(!robo::calibrated(100, 100));
   CHECK(robo::calibrated(3000, 1000));
   CHECK(robo::soilPercent(2000, 3000, 1000) == 50.0);
@@ -342,32 +349,74 @@ void blePreparedWriteBoundary() {
   CHECK(!buffer.finish(owner, output));
 }
 void receiptTransport() {
+  CHECK(robo::printerTransmitBudgetMs(0, 115200) == 0);
+  CHECK(robo::printerTransmitBudgetMs(14001, 115200) == 0);
+  CHECK(robo::printerTransmitBudgetMs(1, 9599) == 0);
+  CHECK(robo::printerTransmitBudgetMs(1, 1000001) == 0);
+  CHECK(robo::printerTransmitBudgetMs(1, 9600) == 5002);
+  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 9600) == 18692);
+  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 115200) == 6141);
+  CHECK(robo::printerTransmitBudgetMs(14000, 1000000) == 5140);
   std::string output;
   const auto append = [&](uint8_t b) { output.push_back(static_cast<char>(b)); return true; };
-  CHECK(robo::writeReceipt("RoboPlanter\nCheck-in", append));
-  const char prefix[] = {0x1b,'@',0x1b,'!',0,0x1b,'a',0,0x1b,'2'};
-  const std::string expected = std::string(prefix, sizeof(prefix)) + "RoboPlanter\nCheck-in\n\n\n\n";
-  CHECK(output == expected);
-  output.clear();
-  CHECK(robo::writeReceipt("Ready\n", append));
-  CHECK(output == std::string(prefix, sizeof(prefix)) + "Ready\n\n\n\n");
-  for (const auto& invalid : {std::string(), std::string(161, 'x'),
-       std::string("cut\x1dV"), std::string("x\0y", 3), std::string("\xE4\xB8\xAD")}) {
-    output.clear();
-    CHECK(!robo::writeReceipt(invalid, append));
-    CHECK(output.empty()); // Reject before resetting/feeding the physical printer.
+  const std::string chinese = "\xE5\xB7\xA5\xE4\xBD\x8D\xE8\x8A\xB1\xE5\x9B\xAD";
+  const std::string text = "RoboPlanter\n" + chinese + "\nReady!";
+  CHECK(robo::writeReceipt(text, append, true));
+  const std::string expected = output;
+  const std::string cut("\x1b\x64\x06\x1d\x56\x00", 6);
+  CHECK(output.substr(output.size()-6) == cut);
+  CHECK(output.size() == robo::plannedReceiptBytes(text, true));
+  CHECK(output.size() <= robo::MaxReceiptWireBytes);
+  CHECK(output.substr(0,2) == "\x1b@");
+  // Parse framing independently: no raster width may consume the cutter bytes.
+  size_t offset = 2, rows = 0, bands = 0, ink = 0;
+  while (offset < output.size()-6) {
+    CHECK(output.substr(offset,4) == std::string("\x1d\x76\x30\x00",4));
+    const auto byte = [&](size_t i) { return static_cast<unsigned char>(output[offset+i]); };
+    const size_t width = byte(4) + 256U*byte(5), height = byte(6) + 256U*byte(7);
+    CHECK(width == 48); CHECK(height > 0 && height <= 32);
+    offset += 8; CHECK(offset+width*height <= output.size()-6);
+    for (size_t i=0; i<width*height; ++i) if (output[offset+i]) ++ink;
+    offset += width*height; rows += height; ++bands;
   }
-  // Every failed byte, including setup and final feed, must stop without retry.
-  for (size_t failed = 0; failed < expected.size(); ++failed) {
+  CHECK(offset == output.size()-6); CHECK(rows == 112); CHECK(bands == 5); CHECK(ink > 0);
+  output.clear(); CHECK(robo::writeReceipt(text, append));
+  CHECK(output == expected.substr(0,expected.size()-3)); // Cutter is opt-in.
+  output.clear(); CHECK(robo::writeReceipt(text+"\n", append,true));
+  CHECK(output == expected); // Trailing LF terminates the final line.
+  const std::vector<std::string> invalid = {std::string(), std::string(161,'x'),
+    std::string("cut\x1dV"), std::string("x\0y",3), std::string("\t"), std::string("\r"),
+    std::string("\x7f"), std::string("\xc2\x85"), std::string("\x80"), std::string("\xc0\xaf"),
+    std::string("\xe0\x80\xaf"), std::string("\xed\xa0\x80"), std::string("\xf0\x9f\x8c\xb1"),
+    std::string("\xe4\xb8"), std::string("\xe4\x41\xad"), std::string("\xe2\x98\x83"),
+    std::string("1\n2\n3\n4\n5\n6\n7\n8\n9"), std::string(160,'W')};
+  for (const auto& bad : invalid) {
+    output.clear(); CHECK(!robo::writeReceipt(bad,append,true)); CHECK(output.empty());
+    CHECK(!robo::printableText(bad)); CHECK(robo::plannedReceiptBytes(bad,true) == 0);
+  }
+  robo::PrinterLayout layout;
+  CHECK(robo::printerTextLayout("1\n2\n3\n4\n5\n6\n7\n8\n",layout)); CHECK(layout.count == 8);
+  CHECK(robo::plannedReceiptBytes("1\n2\n3\n4\n5\n6\n7\n8\n",true) == robo::MaxReceiptWireBytes);
+  std::string row;
+  for (int i=0;i<15;++i) row += "\xe4\xb8\xad";
+  CHECK(robo::printerTextLayout(row,layout)); CHECK(layout.count == 1);
+  row += "\xe4\xb8\xad";
+  CHECK(robo::printerTextLayout(row,layout)); CHECK(layout.count == 2);
+  // Test failures at framing, data, band boundaries, feed and every cutter byte.
+  // Sampling avoids an O(ticket_size^2) failure sweep of a raster payload.
+  const std::vector<size_t> failures = {0,1,2,9,10,393,394,401,402,
+    expected.size()/2,expected.size()-7,expected.size()-6,expected.size()-5,
+    expected.size()-4,expected.size()-3,expected.size()-2,expected.size()-1};
+  for (size_t failed : failures) {
     output.clear(); size_t calls = 0;
-    CHECK(!robo::writeReceipt("RoboPlanter\nCheck-in", [&](uint8_t byte) {
+    CHECK(!robo::writeReceipt(text,[&](uint8_t byte) {
       if (calls++ == failed) return false;
       output.push_back(static_cast<char>(byte)); return true;
-    }));
-    CHECK(calls == failed + 1);
-    CHECK(output == expected.substr(0, failed));
+    },true));
+    CHECK(calls == failed+1); CHECK(output == expected.substr(0,failed));
   }
 }
+
 }  // namespace
 
 int main() {

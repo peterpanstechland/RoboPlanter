@@ -11,6 +11,7 @@
 #include "indicator_board.h"
 #include "lcd_diagnostics.h"
 #include "planter_client.h"
+#include "planter_presentation.h"
 #include "ui_model.h"
 #include "ui_photos.h"
 #include "ui_text.h"
@@ -22,6 +23,7 @@ using ui_theme::Icon;
 bool displayReady=false, clientReady=false, controlsOpen=false, prefsReady=false;
 bool confirmOpen=false;
 planter::Action confirmAction=planter::Action::Water;
+planter::PrintReceipt confirmReceipt;
 ui::Model model;
 ui::TouchGate touch;
 Preferences preferences;
@@ -228,8 +230,20 @@ bool enabled(planter::Action action,const State &s,uint32_t now) {
     case planter::Action::Water:return available && s.pumpEnabled && !s.pumpOn;
     case planter::Action::StopWater:return clientReady && s.wifi && s.pumpEnabled;
     case planter::Action::Light:return available && s.lightEnabled;
-    case planter::Action::Print:return available && s.printerEnabled;
+    case planter::Action::Print:return available && s.printerEnabled && strcmp(s.printerStatus,"recovery_required");
   }return false;
+}
+const char *disabledReason(planter::Action action,const State &s,uint32_t now) {
+  const auto link=planter_presentation::link(s,device_settings::wifiState(),now,clientReady);
+  if(link!=planter_presentation::Link::Ready)
+    return planter_presentation::linkText(link,device_settings::getLanguage()==device_settings::Language::English);
+  if(action==planter::Action::Print && !strcmp(s.printerStatus,"recovery_required"))
+    return tr("请重启打印机和主控","Restart printer + board");
+  if(s.uncertain)return tr("请先检查上次操作","Check previous action");
+  if(s.commandBlocked)return tr("正在执行上次操作","Previous action busy");
+  if(action==planter::Action::Print)return tr("打印机尚未启用","Printer disabled");
+  if(action==planter::Action::Light)return tr("灯带尚未启用","Light disabled");
+  return s.pumpOn?tr("水泵正在运行","Pump is running"):tr("水泵尚未启用","Pump disabled");
 }
 const char *commandLabel(const State &s) {
   if(s.uncertain)return tr("结果未知 · 请先检查花盆","Unknown / check planter first");
@@ -241,7 +255,9 @@ const char *commandLabel(const State &s) {
 }
 void confirmPage(const State &s,uint32_t now) {
   auto &g=indicator::display();const bool water=confirmAction==planter::Action::Water;
-  title(water?tr("确认浇水","Water plant?"):tr("打印便签","Print a note"),water?tr("浇水前，先看看土壤和接水盘","Check the soil and tray first."):tr("当前小票使用英文打印","Preview of the English receipt."));
+  title(water?tr("确认浇水","Water plant?"):tr("打印便签","Print a note"),water?tr("浇水前，先看看土壤和接水盘","Check the soil and tray first."):
+    confirmReceipt.requiresRaster?tr("预览与实际发送文字一致","This text will be sent to the printer."):
+    tr("英文便签 · 兼容旧版打印固件","This text will be sent to the printer."));
   if(water) {
     ui_theme::face(g,model.theme(),132,229,76,(now%5300)<160,now);
     g.fillRoundRect(244,145,212,156,12,theme().card);
@@ -253,16 +269,22 @@ void confirmPage(const State &s,uint32_t now) {
   } else {
     g.fillRect(54,148,372,192,theme().card);
     for(int x=54;x<426;x+=12) {g.fillTriangle(x,148,x+6,142,x+11,148,theme().card);g.fillTriangle(x,340,x+6,346,x+11,340,theme().card);}
-    icon(Icon::Print,76,168,26,theme().cardInk);label(119,174,"RoboPlanter",theme().cardInk,2);
-    for(int x=75;x<406;x+=12)g.drawFastHLine(x,212,6,theme().cardMuted);
-    label(76,232,"Manual garden check-in.",theme().cardInk);
-    label(76,265,"Observe your plant",theme().cardInk);
-    label(76,288,"before watering.",theme().cardInk);
-    centered(352,tr("小纸条，留给忙碌的自己","A little note for a busy day."),theme().muted);
+    char visible[sizeof(confirmReceipt.text)];memcpy(visible,confirmReceipt.text,sizeof(visible));
+    char *line=visible;unsigned row=0;
+    while(*line && row<5) {
+      char *next=strchr(line,'\n');if(next)*next=0;
+      ui_text::drawSized(g,76,row?208+(row-1)*28:167,line,theme().cardInk,row?16:24);
+      ++row;if(!next)break;line=next+1;
+    }
+    for(int x=75;x<406;x+=12)g.drawFastHLine(x,199,6,theme().cardMuted);
+    centered(352,s.printerAutocut?tr("已启用自动切纸 · 请留意出纸口","Auto-cut enabled. Keep the outlet clear."):
+      tr("打印后请沿撕纸口取下","Tear off the receipt after printing."),theme().muted);
   }
   pill(kConfirmCancel,tr("取消","Cancel"),theme().card,theme().cardInk);
-  const bool active=enabled(confirmAction,s,now);
-  pill(kConfirmGo,active?(water?tr("确认浇水","Water now"):tr("打印这张便签","Print note")):tr("当前不可操作","Unavailable"),active?theme().second:theme().surface,active?contrastInk(theme().second):theme().muted);
+  const bool changed=!water&&confirmReceipt.requiresRaster&&!s.printerRaster;
+  const bool active=enabled(confirmAction,s,now)&&!changed;
+  pill(kConfirmGo,active?(water?tr("确认浇水","Water now"):tr("打印这张便签","Print note")):
+    changed?tr("请重新打开预览","Reopen preview"):disabledReason(confirmAction,s,now),active?theme().second:theme().surface,active?contrastInk(theme().second):theme().muted);
   statusStrip(s,now);
 }
 void controlsPage(const State &s,uint32_t now) {
@@ -279,16 +301,16 @@ void controlsPage(const State &s,uint32_t now) {
     const uint16_t ink=active?contrastInk(fill):theme().cardMuted;
     g.fillRoundRect(r.x,r.y,r.w,r.h,12,fill);
     icon(symbols[i],r.x+14,r.y+15,24,ink);label(r.x+50,r.y+19,labels[i],ink);
-    const char *hint=active?(i==1?tr("网络停泵，非物理急停","Network stop only"):i==0||i==3?tr("点击查看确认页","Tap to review first"):tr("抬手后发送一次","One request on release")):tr("当前不可操作","Unavailable");
-    if(i==0&&s.pumpOn)hint=planter::fresh(s,now)&&s.pumpKnown?tr("泵正在运行","Pump is running"):tr("上次状态：泵运行","Last state: running");
-    if(i==3&&s.printerKnown&&!s.printerEnabled)hint=tr("打印机尚未启用","Printer disabled");
-    label(r.x+14,r.y+55,hint,ink);
+    const char *hint=active?(i==1?tr("网络停泵，非物理急停","Network stop only"):i==0||i==3?tr("点击查看确认页","Tap to review first"):tr("抬手后发送一次","One request on release")):disabledReason(kActions[i],s,now);
+    clipped(r.x+14,r.y+55,hint,r.w-28,ink);
   }
   g.fillRoundRect(24,340,432,86,12,theme().surface);
   label(38,352,commandLabel(s),s.uncertain?kWarning:theme().ink);
   if(s.uncertain)pill({24,379,432,44},tr("已现场检查 · 解除操作锁定","Checked on site / unlock actions"),theme().card,theme().cardInk,true);
   else {
-    clipped(38,383,s.commandError[0]?tr("操作未完成，请检查设备连接",s.commandError):tr("软件完成不等于已出水或已出纸","Software result, not physical proof."),402,theme().muted);
+    const bool connected=planter_presentation::link(s,device_settings::wifiState(),now,clientReady)==planter_presentation::Link::Ready;
+    clipped(38,383,!connected?tr("打开设置中的花盆连接查看原因","Open Settings > Planter connection"):
+      s.commandError[0]?tr("操作未完成，请检查设备连接",s.commandError):tr("软件完成不等于已出水或已出纸","Software result, not physical proof."),402,theme().muted);
     if(s.pumpKnown&&s.pumpOn&&planter::fresh(s,now)) {
       // Decorative motion only; no guessed amount, delivery or completion rate.
       for(int i=0;i<7;++i)g.fillRect(40+i*56,412,30,4,((now/120+i)%7)<3?kAqua:theme().muted);
@@ -378,14 +400,18 @@ void handle(ui::Gesture gesture,const State &s,uint32_t now) {
     if(confirmOpen) {
       if(tapped(kConfirmCancel))confirmOpen=false;
       else if(tapped(kConfirmGo)&&enabled(confirmAction,s,now)) {
-        if(planter::submit(confirmAction))confirmOpen=false;
+        if(planter::submit(confirmAction,false,confirmAction==planter::Action::Print?&confirmReceipt:nullptr))confirmOpen=false;
       }
       return;
     }
     if(tapped(kDismiss)){controlsOpen=false;return;}
     if(s.uncertain&&tapped({24,379,432,44})){planter::acknowledgeUncertain();return;}
     for(uint8_t i=0;i<4;++i)if(tapped(kHardware[i])&&enabled(kActions[i],s,now)) {
-      if(kActions[i]==planter::Action::Water||kActions[i]==planter::Action::Print){confirmAction=kActions[i];confirmOpen=true;}
+      if(kActions[i]==planter::Action::Water||kActions[i]==planter::Action::Print){
+        confirmAction=kActions[i];
+        if(confirmAction==planter::Action::Print)confirmReceipt=planter_presentation::receipt(s,device_settings::getLanguage()==device_settings::Language::English);
+        confirmOpen=true;
+      }
       else planter::submit(kActions[i],!s.lightOn);
       return;
     }

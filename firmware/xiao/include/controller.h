@@ -4,11 +4,12 @@
 #include <cstdint>
 #include <string>
 #include "light_effects.h"
+#include "printer_text.h"
 
 namespace robo {
 
 constexpr size_t MaxRequestId = 32;
-constexpr size_t MaxPrintBytes = 160;
+constexpr size_t MaxPrintBytes = MaxPrinterTextBytes;
 constexpr size_t CacheCapacity = 64;
 
 struct Command {
@@ -60,12 +61,8 @@ inline bool validId(const std::string& id) {
 }
 
 inline bool printableText(const std::string& text) {
-  if (text.empty() || text.size() > MaxPrintBytes) return false;
-  for (unsigned char c : text) {
-    // Raw printer control codes and unknown Chinese encodings are not accepted.
-    if (c != '\n' && (c < 32 || c > 126)) return false;
-  }
-  return true;
+  PrinterLayout layout;
+  return printerTextLayout(text, layout);
 }
 
 inline bool parseUnsigned(const std::string& text, uint32_t& value) {
@@ -127,6 +124,7 @@ class Controller {
       lightOn_ = command.on;
       lightEffect_ = command.on && command.hasEffect ? command.effect : "solid";
     } else if (command.action == "print") {
+      if (printerRecoveryRequired_) return reject(command, "printer_recovery_required");
       if (pumpOn_) return reject(command, "pump_busy");
       if (printerBusy_) return reject(command, "printer_busy");
       printerBusy_ = true;
@@ -146,7 +144,10 @@ class Controller {
 
   void finishPrint(const std::string& requestId, bool success) {
     printerBusy_ = false;
-    printerStatus_ = success ? "bytes_sent" : "write_failed";
+    // A partial GS v 0 leaves the device waiting for raster bytes. No new job
+    // may follow until both printer and controller are restarted/recovered.
+    if (!success) printerRecoveryRequired_ = true;
+    printerStatus_ = printerRecoveryRequired_ ? "recovery_required" : "bytes_sent";
     finish(requestId, success, success ? "" : "printer_write_failed");
   }
 
@@ -182,6 +183,7 @@ class Controller {
   bool lightOn_ = false;
   std::string lightEffect_ = "solid";
   bool printerBusy_ = false;
+  bool printerRecoveryRequired_ = false;
   uint32_t pumpStartedMs_ = 0;
   uint32_t pumpDurationMs_ = 0;
   std::string pumpRequestId_;

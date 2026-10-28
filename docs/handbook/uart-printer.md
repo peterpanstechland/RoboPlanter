@@ -1,6 +1,6 @@
 # UART 小票打印机接入
 
-使用 SERVO4/D8 作为发送引脚，连接串口打印机并避免冷启动日志出纸。当前支持英文文本和走纸，中文、切刀和状态反馈仍在开发。
+使用 SERVO4/D8 作为发送引脚，连接串口打印机并避免冷启动日志出纸。固件支持中文/英文点阵小票、走纸及显式启用的自动切纸。缺纸、过热与机械完成反馈尚未实现。
 
 ## 为什么一上电就打印日志
 
@@ -24,7 +24,9 @@ SERVO4 必须没有水泵或舵机；J14 pin3 是 Motor5V，不接打印机电�
 
 GPIO44 保留硬件接收能力；当前代码尚未实现该型号的状态查询与解码，接线完成不代表已经能判断缺纸。GPIO44 仅作接收，不作打印发送。两个 I²C 插座和板载 IMU 均保持原连接。
 
-厂家[中文 EM5826H 产品页](https://www.donnwei.com/?page_id=24893&post_type=products)也明确写明“58mm热敏带切刀”。产品资料列出 ESC/POS、384 点宽度及默认 9600 波特；已测试设备使用115200波特；接入时以打印机自检页的设置为准。当前驱动提供初始化、英文打印与走纸。
+厂家[中文 EM5826H 产品页](https://www.donnwei.com/?page_id=24893&post_type=products)也明确写明“58mm热敏带切刀”。产品资料列出 ESC/POS、384 点宽度及默认 9600 波特；此前英文出纸测试使用 115200 波特；接入时以打印机自检页的设置为准。
+
+中文和切纸实现依据提供的 [escpos-sample 示例](https://github.com/peterpanstechland/escpos-sample/tree/60f85d4e8cbcce8956528c7a2d1d0344aa2adf55)：有效宽度 **384 点**，使用 `GS v 0` 光栅指令。正文不是 GBK 字节，而是由固件字库渲染的黑白点阵。结束时发送 `ESC d 6`（`1B 64 06`），开启切刀后紧接 `GS V 0`（`1D 56 00`）；不要替换成示例说明不适用的 65/66 变体。示例的 USB 传输已改为本项目 UART；串口出纸与切刀效果仍需逐台验收。
 
 ## 固件配置与保留现有功能
 
@@ -38,22 +40,43 @@ GPIO44 保留硬件接收能力；当前代码尚未实现该型号的状态查�
 #define ROBO_PRINTER_HARDWARE_CONFIRMED 1
 #define ROBO_PRINTER_D8_WIRING_CONFIRMED 1
 #define ROBO_PRINTER_BAUD 115200 // 按打印机自检页设置调整
+#define ROBO_PRINTER_CUTTER_CONFIRMED 1 // 仅适用于已确认带刀且兼容上述指令的打印机
 ```
 
-仍需有效的非默认设备令牌，不能使用编译测试中的占位令牌。水泵保持原来的禁用状态。
+仍需有效的非默认设备令牌，不能使用编译测试中的占位令牌。水泵保持原来的禁用状态。公开默认配置关闭打印与切刀；无刀机保留 `ROBO_PRINTER_CUTTER_CONFIRMED 0`。
+
+## 连接 Indicator
+
+两板使用 Wi-Fi/HTTP，Indicator 不接打印机串口。只连接同一 Wi-Fi 并不足够，还需匹配花盆地址和设备令牌。电脑能访问 XIAO 后，可以从已有的私有配置生成屏幕配置：
+
+```powershell
+python tools/pair_indicator.py --url http://<XIAO当前IP> --device-id <实际device_id>
+```
+
+工具读取 `firmware/xiao/include/config.local.h`，仅执行一次鉴权状态查询，核对设备后写入 Git 忽略的 `firmware/indicator/include/local_config.h`，不发送打印或其他动作，不输出凭据。已有文件需显式加 `--replace`；它只更新四个配对字段并保留其他配置。生成后重新构建、刷写 Indicator。默认不启用本地土壤中继，只有安装 RP2040 土壤应答固件后才启用该选项。
+
+屏幕“设置 → 花盆连接”显示地址、网络及 HTTP 诊断，不显示令牌。它可恢复使用已配对网络；任意新 Wi-Fi 不会自动改变花盆地址或令牌。按钮禁用会区分未连接、网络不匹配、认证失败、状态过期、外设未启用及打印恢复锁定。
 
 ## 完整打印流程
 
 1. 冷启动，观察打印机不再输出 ESP32 日志；检查 XIAO 回到原网络，灯带与土壤链路仍可用。
-2. 通过已鉴权的 `/api/v1/state` 确认 `printer.enabled:true`、初始状态 `idle`。
-3. 首次仅提交一条短 ASCII 小票，保存这次请求 ID；不要因等待时间长再提交新的 ID。
+2. 通过已鉴权的 `/api/v1/state` 确认 `printer.enabled:true`、初始状态 `idle`、`text_format:"utf8-raster"`、`paper_width_dots:384`，以及符合本机配置的 `autocut`。
+3. 提交一张短中文/英文小票，例如“工位盆栽\n照料植物，也记得休息。”，保存这次请求 ID；不要因等待时间长再提交新的 ID。
 4. 查询 `/api/v1/result?request_id=...`，等待 `accepted` 变为 `completed`；随后人工检查纸面、方向、换行和走纸距离。
-5. Indicator 进入今日状态 → 硬件操作 → 打印 → 小票预览 → 确认。屏幕已有该路径，XIAO 启用打印后应显示可用；只确认一次，检查只出一张。
+5. Indicator 进入今日状态 → 硬件操作 → 打印 → 小票预览 → 确认。中文界面在设备声明光栅能力时使用中文，英文界面或旧固件使用英文。预览正文会冻结到这次提交；只确认一次，检查只出一张，带刀配置下检查纸张是否实际切断。
 6. 相同启动周期内查询或重复同一 ID 不应重印。设备重启后缓存会丢失，不能跨重启自动重发结果不明的请求。
 
-每张小票先由固件发送固定 ESC/POS 初始化、正常字号、左对齐和默认行距，再发送正文及末尾走纸。正文最多 160 字节，仅 ASCII 和换行；中文、用户传入的 ESC 控制码会被拒绝。当前未实现位图、中文、自动切刀、缺纸或机械完成反馈。
+## 字库与传输限制
 
-`completed` / `bytes_sent` 仅证明 UART 完成发送，不能代替实际出纸确认。串口失败会终止任务且不会自动重印。当前 D8 分配不允许同时启用打印和水泵；今后另行分配泵引脚后仍须保留动作互斥。云端打印与 YOYO 手机打印仍需单独接入。
+正文为严格 UTF-8，最多 **160 字节**，不等于 160 个汉字。字库包含 7,540 个 ASCII/GB2312 映射字符，使用 Noto Sans SC 的 24 像素点阵和 32 像素行高；最多自动换行到 8 行。支持换行，不支持用户传入的 ESC、其他控制码、emoji 或字库外字符。不合法正文会在发送任何打印字节前拒绝。
+
+固件按最多 32 行像素分带发送，单个缓冲区 1,536 字节，无整页大缓冲。超时预算按实际光栅字节数和波特率计算，另留 5 秒余量，覆盖 9600 波特的长小票。字库随源码提交，正常编译不需要下载原始字体；再生成使用 `tools/build_printer_font.py`，字体版权与 OFL 见 [字体说明](../../firmware/indicator/assets/fonts/README.md)。
+
+离线检查可将 `tests/core/printer_preview.cpp` 编译成主机程序，运行 `printer_preview.exe note.txt receipt.bin cut`，再运行 `python tools/render_printer_preview.py receipt.bin preview.png`。这会调用与设备相同的编码器，不访问打印机。PNG 只预览纸面点阵，不模拟切刀效果。
+
+`completed` / `bytes_sent` 仅证明 UART 完成发送，不能代替实际出纸或切刀确认；`feedback:"unavailable"` 明确表示没有机械反馈。发送中断后本次请求为 `printer_write_failed`，状态锁定为 `recovery_required`，后续新打印拒绝为 `printer_recovery_required`。这避免下一张被未收完的光栅包吞掉；检查纸张和线路后，应重启打印机与主控清除残留，不能只重发请求。重启前结果不明的原任务不可自动重放。
+
+当前 D8 分配不允许同时启用打印和水泵；今后另行分配泵引脚后仍须保留动作互斥。本地 MCP 可提交同样的受限 UTF-8 正文；云端写操作和 YOYO 手机打印仍需独立接入与验收，本次固件变更不会自动开放它们。
 
 ## 打印后检查
 

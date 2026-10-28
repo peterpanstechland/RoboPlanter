@@ -55,6 +55,7 @@ unsigned displayAccessCount = 0;
 bool failNextPresent = false;
 bool interactionChecks = false;
 std::vector<planter::Action> submitted;
+std::vector<std::string> submittedReceipts;
 unsigned checked = 0;
 unsigned artStabilityChecks = 0;
 unsigned displayFailureChecks = 0;
@@ -85,6 +86,10 @@ bool requestConnect(const char *, const char *) {
   throw std::runtime_error("Capture must not request a connection, even through the mock");
 }
 bool restoreDefaultWifi() { host_fixture::resetWifi(); return true; }
+PlanterEndpoint planterEndpoint() {
+  PlanterEndpoint value;value.configured=true;
+  strcpy(value.ssid,"example");strcpy(value.address,"http://192.0.2.1");return value;
+}
 void service() { throw std::runtime_error("The native renderer must not run a network worker"); }
 uint32_t networkRevision() { return 0; }
 bool planterNetworkReady() { return false; }
@@ -94,12 +99,13 @@ bool begin() { return true; }
 State snapshot() { return hostState; }
 bool fresh(const State &state, uint32_t now) {
   // Same boundary contract as planter_client.cpp; no transport is linked.
-  return state.received && state.wifi && state.ageKnown &&
+  return state.received && state.wifi && state.ageKnown && state.networkFailure == NetworkFailure::None &&
       static_cast<uint64_t>(now - state.receivedMs) + state.sampleAgeMs <= kStaleMs;
 }
-bool submit(Action action, bool) {
+bool submit(Action action, bool, const PrintReceipt *receipt) {
   if (!interactionChecks) throw std::runtime_error("Rendering must never submit a hardware action");
   submitted.push_back(action);
+  if (receipt) submittedReceipts.push_back(receipt->text);
   return true;
 }
 void acknowledgeUncertain() { throw std::runtime_error("Rendering must not modify command state"); }
@@ -350,6 +356,19 @@ void interactionTests() {
     tapRect(kConfirmGo, available, 1300);
     require(submitted.size() == 1, "A further tap outside an action cannot resubmit");
   }
+  available.printerRaster = true;
+  device_settings::setLanguage(device_settings::Language::Chinese);
+  resetPage(0, 1); controlsOpen = true; touch = ui::TouchGate(); submitted.clear(); submittedReceipts.clear();
+  tapRect(kHardware[3], available, 1100);
+  const std::string preview = confirmReceipt.text;
+  require(confirmReceipt.requiresRaster && preview.find("工位盆栽") == 0, "Chinese raster preview must use Chinese text");
+  device_settings::setLanguage(device_settings::Language::English);
+  tapRect(kConfirmGo, available, 1200);
+  require(submittedReceipts.size() == 1 && submittedReceipts[0] == preview, "Changing language after preview must not change approved receipt bytes");
+  strcpy(available.printerStatus, "recovery_required");
+  require(!enabled(planter::Action::Print, available, 1200), "Printer recovery must block another receipt");
+  available.printerStatus[0] = 0;
+  device_settings::setLanguage(device_settings::Language::Chinese);
   resetPage(0, 1); controlsOpen = true; touch = ui::TouchGate(); submitted.clear();
   tapRect(kHardware[0], available, 1100);
   handle(touch.update(ui::TouchInput::Down, 350, 220, 1200), available, 1200);
@@ -417,6 +436,7 @@ void captureScreens(const std::filesystem::path &output, uint8_t themeId, const 
   confirmOpen = true; confirmAction = planter::Action::Water;
   writeFrame(output, {prefix + "confirm-water", "screen", "confirm-water", themeId, 1000});
   confirmAction = planter::Action::Print;
+  confirmReceipt = planter_presentation::receipt(hostState, device_settings::getLanguage() == device_settings::Language::English);
   writeFrame(output, {prefix + "confirm-print", "screen", "confirm-print", themeId, 1000});
 }
 
@@ -430,7 +450,10 @@ void captureSettings(const std::filesystem::path &output, const std::string &lan
   host_fixture::wifi.scanning = false;
   writeFrame(output, {prefix + "wifi-empty", "screen", "settings-wifi-empty", 0, 1200});
   settings_ui::open();
-  tapRect({16, 394, 448, 54}, hostState, 1300);
+  tapRect({16, 394, 216, 54}, hostState, 1250);
+  writeFrame(output, {prefix + "planter", "screen", "settings-planter", 0, 1300});
+  settings_ui::open();
+  tapRect({248, 394, 216, 54}, hostState, 1300);
   writeFrame(output, {prefix + "about", "screen", "settings-about", 0, 1400});
   settings_ui::open();
   host_fixture::wifi.networkCount = 1;
@@ -448,6 +471,22 @@ void captureSettings(const std::filesystem::path &output, const std::string &lan
   tapRect({244, 422, 102, 48}, hostState, 2300);
   writeFrame(output, {prefix + "keyboard-symbols-2", "screen", "settings-keyboard-symbols-2", 0, 2400});
   settings_ui::close();
+}
+void capturePrinter(const std::filesystem::path &output) {
+  for (unsigned lang = 0; lang < 2; ++lang) {
+    device_settings::setLanguage(lang ? device_settings::Language::English : device_settings::Language::Chinese);
+    resetPage(0, 1); controlsOpen = confirmOpen = true; confirmAction = planter::Action::Print;
+    hostState.received = hostState.wifi = hostState.ageKnown = true;
+    hostState.receivedMs = 1000;
+    hostState.printerKnown = hostState.printerEnabled = hostState.printerRaster = hostState.printerAutocut = true;
+    host_fixture::wifi.ready = host_fixture::wifi.planterNetwork = true;
+    host_fixture::wifi.phase = device_settings::WifiPhase::Connected;
+    confirmReceipt = planter_presentation::receipt(hostState, lang != 0);
+    writeFrame(output, {lang ? "en-printer-raster" : "zh-printer-raster", "screen", "confirm-print", 0, 1000, "zh", "sample_printer_capability_no_io"});
+    confirmOpen = false;strcpy(hostState.printerStatus, "recovery_required");
+    writeFrame(output, {lang ? "en-printer-recovery" : "zh-printer-recovery", "screen", "controls", 0, 1000, "zh", "sample_printer_capability_no_io"});
+    hostState = State();host_fixture::resetWifi();
+  }
 }
 const char *speciesNames[] = {"mint", "basil", "rose", "succulent"};
 const char *stageNames[] = {"seed", "sprout", "leafy", "bloom", "mature"};
@@ -522,6 +561,7 @@ int main(int argc, char **argv) {
     device_settings::setLanguage(device_settings::Language::English);
     captureScreens(output, 0, "en-theme-0-");
     captureSettings(output, "en");
+    capturePrinter(output);
     captureGarden(output);
     device_settings::setLanguage(device_settings::Language::Chinese);
     resetPage(0, 4); model.timer().start(1000);

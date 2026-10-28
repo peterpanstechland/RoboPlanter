@@ -23,6 +23,7 @@
 constexpr unsigned kHttpTimeoutMs = 1500;
 constexpr unsigned kPollIntervalMs = 1000;
 constexpr unsigned kStaleMs = 5000;
-constexpr unsigned kCommandResolveMs = 15000;
+// A full raster receipt can take about 14 seconds even on a 9600 baud unit.
+constexpr unsigned kCommandResolveMs = 30000;
 static_assert(PLANTER_WATER_DURATION_MS > 0 && PLANTER_WATER_DURATION_MS <= 10000,
               "Manual watering pulse must be 1..10000 ms");

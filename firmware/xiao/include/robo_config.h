@@ -86,6 +86,9 @@
 #ifndef ROBO_PRINTER_D8_WIRING_CONFIRMED
 #define ROBO_PRINTER_D8_WIRING_CONFIRMED 0
 #endif
+#ifndef ROBO_PRINTER_CUTTER_CONFIRMED
+#define ROBO_PRINTER_CUTTER_CONFIRMED 0
+#endif
 
 namespace pins {
 constexpr int Soil = 1;       // D0, SERVO3 signal; supply sensor separately at 3.3V.
@@ -122,4 +125,6 @@ static_assert(!ROBO_ENABLE_PRINTER || ROBO_PRINTER_D8_WIRING_CONFIRMED,
               "Printer RX must connect to SERVO4 D8/GPIO7; remove pump/servo");
 static_assert(!(ROBO_ENABLE_PRINTER && ROBO_ENABLE_PUMP),
               "SERVO4 D8/GPIO7 is shared: printer and pump cannot both be enabled");
+static_assert(ROBO_PRINTER_BAUD >= 9600 && ROBO_PRINTER_BAUD <= 1000000,
+              "Printer baud must be 9600..1000000 for the bounded raster transport");
 static_assert(!(ROBO_ENABLE_SOIL && ROBO_ENABLE_REMOTE_SOIL), "Choose one soil source");

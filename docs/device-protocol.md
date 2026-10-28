@@ -30,10 +30,11 @@ Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/m
 | `environment.temperature_c`、`humidity_pct`、`valid` | 可选 SHT31 的温湿度和有效性 |
 | `pump.enabled`、`on`、`remaining_ms` | 泵功能是否启用、当前状态和剩余时间 |
 | `light.enabled`、`on`、`effect` | 灯带功能、目标开关及模式；关灯时模式为 `solid` |
-| `printer.enabled`、`status` | 打印功能与软件发送状态 |
+| `printer.enabled`、`status` | 打印功能与软件发送状态：disabled / idle / queued / bytes_sent / recovery_required |
+| `printer.text_format`、`paper_width_dots`、`autocut`、`feedback` | 新固件为 utf8-raster、384、切刀配置布尔值、unavailable；旧固件可能缺省 |
 | `last_command.request_id`、`status`、`error` | 最近命令的关联标识、结果及错误 |
 
-未启用的数值返回 `null`，不能用零值替代。采样失效时可保留原始 ADC 供诊断，但客户端必须依据 `valid` 和采样年龄判断；未标定的湿度百分比为 `null`。打印机串口发送完成只代表字节交给串口，不代表纸张实际打印完成；实际纸尽、过热和完成反馈需按打印机型号增加。
+未启用的数值返回 `null`，不能用零值替代。采样失效时可保留原始 ADC 供诊断，但客户端必须依据 `valid` 和采样年龄判断；未标定的湿度百分比为 `null`。打印机串口发送完成只代表字节交给串口，不代表纸张实际打印完成；实际纸尽、过热和完成反馈需按打印机型号增加。发送中断时本次结果为 `printer_write_failed`，状态进入 `recovery_required` 并拒绝新打印（`printer_recovery_required`）。检查后重启打印机与主控清除残留，不自动重放旧任务。详见 [打印教程](handbook/uart-printer.md)。
 
 ### 可选的 Indicator 土壤上传
 
@@ -58,7 +59,7 @@ Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/m
 | `water` | `duration_ms` 正整数 | 启动一次有本地时间上限的浇水；不是毫升数 |
 | `stop_water` | 无 | 停止泵 |
 | `light` | `on` 布尔值；开灯可选 `effect` | `solid` / `breath` / `chase` / `rainbow`，省略为 `solid`；关灯禁止传 `effect` |
-| `print` | `text` 字符串 | 将支持的文本加入打印任务；首版编码见固件说明 |
+| `print` | `text` 字符串 | UTF-8 最多 160 字节，ASCII/GB2312 字库字符与 LF，自动换行最多 8 行；禁止外部控制指令 |
 
 灯效命令示例：`{"request_id":"lamp-01","action":"light","on":true,"effect":"breath"}`。同 ID 的省略模式与显式 `solid` 视为相同请求；换成其他模式则冲突。动画在后台持续运行，`completed` 只确认软件完成设置，不证明实物发光或后续每一帧正常。详见 [WS2812 教程](handbook/ws2812-lighting.md)。
 
