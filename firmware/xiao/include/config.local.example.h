@@ -20,10 +20,12 @@
 #define ROBO_SOIL_WET_RAW -1
 #define ROBO_ENABLE_AIR 0
 #define ROBO_ENABLE_UV 0
-// GPIO9/M2 encoder B has a 4.7k pull-up; verify loading/calibration or use ADC module.
+// Air: SERVO2 GPIO8; UV: SERVO3 GPIO1 (cannot share with local soil).
+// Signal pins only; use separate 3.3V/GND, not the Servo 5V power pins.
 #define ROBO_AUX_PINS_CONFIRMED 0
 #define ROBO_ENABLE_SHT31 0  // Only SHT31, NOT an unidentified Grove/DHT module.
 #define ROBO_SHT31_ADDRESS 0x44
+#define ROBO_ENABLE_DHT20 0 // Grove Temperature & Humidity v2.0, I2C 0x38.
 
 #define ROBO_ENABLE_PUMP 0  // External active-high 3.3V-compatible 12V driver only.
 #define ROBO_PUMP_HARDWARE_CONFIRMED 0

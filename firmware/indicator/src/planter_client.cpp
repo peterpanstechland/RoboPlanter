@@ -346,7 +346,11 @@ void networkTask(void *) {
         uploadSoil();
         pollState();
         pollCommandResult();
-        nextPoll = millis() + kPollIntervalMs;
+        // Keep the period anchored to the start of this cycle. Adding another
+        // full second after three HTTP operations made relayed soil expire
+        // between otherwise successful uploads. Slow/failed transfers still
+        // expire normally; do not lengthen the sensor freshness limit.
+        nextPoll = now + kPollIntervalMs;
       }
     } else {
       const auto wifi = device_settings::wifiState();

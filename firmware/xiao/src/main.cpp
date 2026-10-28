@@ -23,6 +23,7 @@
 #include "robo_config.h"
 #include "remote_soil.h"
 #include "diagnostic_read_session.h"
+#include "dht20.h"
 #if ROBO_WS2813_RMT
 #include "ws2813_rmt.h"
 #endif
@@ -157,6 +158,21 @@ bool readSht31(float& temperature, float& humidity) {
          temperature >= -45 && temperature <= 130 && humidity >= 0 && humidity <= 100;
 }
 
+struct Dht20Bus {
+  bool read(uint8_t* bytes, size_t count) {
+    if (Wire.requestFrom(uint8_t(0x38), static_cast<uint8_t>(count)) != count)
+      return false;
+    for (size_t i = 0; i < count; ++i) bytes[i] = Wire.read();
+    return true;
+  }
+  bool write(const uint8_t* bytes, size_t count) {
+    Wire.beginTransmission(0x38);
+    Wire.write(bytes, count);
+    return Wire.endTransmission() == 0;
+  }
+  void wait(unsigned ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
+};
+
 int readAnalog(int pin) {
   uint32_t total = 0;
   for (int i = 0; i < 8; ++i) total += analogRead(pin);
@@ -164,6 +180,7 @@ int readAnalog(int pin) {
 }
 
 void sensorTask(void*) {
+  if (ROBO_ENABLE_DHT20) vTaskDelay(pdMS_TO_TICKS(100));
   TickType_t wake = xTaskGetTickCount();
   for (;;) {
     Sample next;
@@ -181,12 +198,17 @@ void sensorTask(void*) {
     }
     if (ROBO_ENABLE_SHT31)
       next.environmentValid = readSht31(next.temperature, next.humidity);
+    if (ROBO_ENABLE_DHT20) {
+      Dht20Bus bus;
+      next.environmentValid = robo::readDht20(bus, next.temperature, next.humidity) ==
+                              robo::Dht20Result::Ok;
+    }
     next.timestamp = millis();
     {
       Lock guard(sensorMutex);
       sample = next;
     }
-    vTaskDelayUntil(&wake, pdMS_TO_TICKS(1000));
+    vTaskDelayUntil(&wake, pdMS_TO_TICKS(ROBO_ENABLE_DHT20 ? 2000 : 1000));
   }
 }
 
@@ -767,8 +789,9 @@ void setup() {
   if (ROBO_ENABLE_SOIL) { pinMode(pins::Soil, INPUT); analogSetPinAttenuation(pins::Soil, ADC_11db); }
   if (ROBO_ENABLE_AIR) { pinMode(pins::Air, INPUT); analogSetPinAttenuation(pins::Air, ADC_11db); }
   if (ROBO_ENABLE_UV) { pinMode(pins::Uv, INPUT); analogSetPinAttenuation(pins::Uv, ADC_11db); }
-  if (ROBO_ENABLE_SHT31) {
+  if (ROBO_ENABLE_SHT31 || ROBO_ENABLE_DHT20) {
     Wire.begin(pins::Sda, pins::Scl);
+    Wire.setClock(100000);
     Wire.setTimeOut(30);
   }
   if (ROBO_ENABLE_LIGHT) {

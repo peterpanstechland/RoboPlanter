@@ -53,6 +53,9 @@
 #ifndef ROBO_ENABLE_SHT31
 #define ROBO_ENABLE_SHT31 0
 #endif
+#ifndef ROBO_ENABLE_DHT20
+#define ROBO_ENABLE_DHT20 0
+#endif
 #ifndef ROBO_SHT31_ADDRESS
 #define ROBO_SHT31_ADDRESS 0x44
 #endif
@@ -94,7 +97,7 @@ namespace pins {
 constexpr int Soil = 1;       // D0, SERVO3 signal; supply sensor separately at 3.3V.
 constexpr int Pump = 7;       // D8/SERVO4: pump OR printer TX, never both.
 constexpr int Air = 8;        // D9, SERVO2 signal: servo must be disconnected.
-constexpr int Uv = 9;         // D10, M2 ENC B: unplug encoder; 4.7k pull-up loads ADC.
+constexpr int Uv = 1;         // D0, SERVO3 signal; separate 3.3V supply, no servo.
 constexpr int Sda = 5;
 constexpr int Scl = 6;
 constexpr int Rgb = 40;       // D13, Grove RGB.
@@ -116,7 +119,11 @@ static_assert(sizeof(ROBO_AP_PASSWORD) >= 9 && sizeof(ROBO_AP_PASSWORD) <= 64,
 static_assert(ROBO_SHT31_ADDRESS == 0x44 || ROBO_SHT31_ADDRESS == 0x45,
               "SHT31 supports I2C address 0x44 or 0x45");
 static_assert(!(ROBO_ENABLE_AIR || ROBO_ENABLE_UV) || ROBO_AUX_PINS_CONFIRMED,
-              "Confirm SERVO2/encoder disconnection and ADC voltage before AUX use");
+              "Confirm SERVO2/3 disconnection and separate 3.3V sensor supply");
+static_assert(!(ROBO_ENABLE_SOIL && ROBO_ENABLE_UV),
+              "SERVO3 GPIO1 is shared: local soil and UV cannot both be enabled");
+static_assert(!(ROBO_ENABLE_DHT20 && ROBO_ENABLE_SHT31),
+              "Choose one environment sensor: Grove v2.0 DHT20 or SHT31");
 static_assert(!ROBO_ENABLE_PUMP || ROBO_PUMP_HARDWARE_CONFIRMED,
               "Confirm external pump driver, polarity, supply and current first");
 static_assert(!ROBO_ENABLE_PRINTER || ROBO_PRINTER_HARDWARE_CONFIRMED,

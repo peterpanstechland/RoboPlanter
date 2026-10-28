@@ -290,16 +290,18 @@ export ROBOPLANTER_TOKEN
 
 两个值大小顺序取决于探头，公式可处理相反方向。百分比是相对湿度指标，不是体积含水率。`valid:true` 只说明读到了近期且在范围内的 ADC；常数 0、4095 或漂浮读数仍需排查断线、饱和和接触。未标定时 `percent:null` 是正确结果。
 
-### 8.2 SHT31 温湿度
+### 8.2 温湿度：DHT20 v2.0 或 SHT31
 
-确认芯片确为 SHT31，电源/总线可用 3.3 V：SCL → **J11/J12 pin1 / GPIO6**，SDA → **pin2 / GPIO5**，3.3 V → pin3，GND → pin4。默认 `ROBO_SHT31_ADDRESS 0x44`，实际地址为 `0x45` 时对应修改。板载 IMU 使用 `0x6A`，不能接同地址设备。
+本机用户已确认 Grove Temperature & Humidity Sensor v2.0，即 DHT20：接 J11/J12 IIC，3.3V供电，启用 `ROBO_ENABLE_DHT20 1`，保持 `ROBO_ENABLE_SHT31 0`。地址固定0x38，每2秒采样；检查校准状态、忙标志和CRC，异常时 `environment.valid:false`。先核对室内读数，再用手靠近观察缓慢变化；不要让水或冷凝水接触元件。驱动不会对异常校准状态强行套用其他型号初始化。
+
+另一种支持的选配是 SHT31，电源/总线可用 3.3 V：SCL → **J11/J12 pin1 / GPIO6**，SDA → **pin2 / GPIO5**，3.3 V → pin3，GND → pin4。默认 `ROBO_SHT31_ADDRESS 0x44`，实际地址为 `0x45` 时对应修改。板载 IMU 使用 `0x6A`，不能接同地址设备。
 
 仅设置 `ROBO_ENABLE_SHT31 1`。通过条件是环境 `valid:true`、温湿度落在现场合理范围，改变环境后有合理响应；驱动检查 CRC。DHT11/DHT22/AHT 类模块需要自己的驱动，不改个名字就能运行。
 
 ### 8.3 空气和 UV 原始值（可选）
 
 - 空气模拟 OUT → **J5 Servo2 pin1 / D9 / GPIO8**。先断开该口的原舵机，电源另按传感器规格接，输出电压合格后才可设 `ROBO_ENABLE_AIR 1` 和 `ROBO_AUX_PINS_CONFIRMED 1`。
-- UV 预留 OUT → **J9 M2 ENC pin4 / D10 / GPIO9**。必须断开编码器；V1.0 该路存在 22 Ω 串阻及 **4.7 kΩ 上拉到 3.3 V**，会加载模拟传感器。它不是已经验证的 UV 接口，默认不要装。若传感器不能在该负载下正确工作，需要重新设计接口/外部 ADC 并修改代码，不能靠勾选确认标志修复。
+- UV OUT → **J13 Servo3 pin1 / D0 / GPIO1**，Servo3 必须空闲，且不能同时开启本地土壤输入。旧 GPIO9 编码器口有4.7k上拉，不再采用。Air v1.3、UV v1.1 分别只接上述信号脚，红线另接3.3V、黑线共地、白线不接；不能整根插入Servo的5V电源接口。实际接线确认后再开启对应采集和确认标志。
 
 名称如 Grove Air Quality v1.3 / UV v1.1 不能代替实际型号、电源及输出检查。现有固件只报告 ADC，不能显示 CO₂、PM2.5、UV Index、lux 或光合有效辐射。设置确认标志只是记录你已经完成硬件核对，不会改变电路。
 
