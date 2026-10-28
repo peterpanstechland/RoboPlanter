@@ -27,7 +27,8 @@ Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/m
 | `soil.raw`、`soil.percent`、`soil.valid`、`soil.calibrated` | 原始 ADC、标定后的相对湿度和有效性；未标定不提供百分比 |
 | `air.raw`、`air.valid` | 空气质量模块原始值；不是 CO₂ 或 PM2.5 浓度 |
 | `uv.raw`、`uv.valid` | UV 模块原始值；不是可见光照度或 PAR |
-| `environment.temperature_c`、`humidity_pct`、`valid` | 可选 SHT31 的温湿度和有效性 |
+| `ambient_light.enabled`、`raw`、`valid` | 可选 Grove Light v1.2 的环境光 ADC，0–4095、越亮越大；不是lux，与UV和灯带控制分别表示 |
+| `environment.temperature_c`、`humidity_pct`、`valid` | 可选 DHT20 / SHT31 的温湿度和有效性 |
 | `pump.enabled`、`on`、`remaining_ms` | 泵功能是否启用、当前状态和剩余时间 |
 | `light.enabled`、`on`、`effect` | 灯带功能、目标开关及模式；关灯时模式为 `solid` |
 | `printer.enabled`、`status` | 打印功能与软件发送状态：disabled / idle / queued / bytes_sent / recovery_required |

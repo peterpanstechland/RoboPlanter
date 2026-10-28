@@ -581,6 +581,16 @@ int main(int argc, char **argv) {
     captureScreens(output, 0, "en-theme-0-");
     captureSettings(output, "en");
     capturePrinter(output);
+    for (bool english : {false, true}) {
+      device_settings::setLanguage(english ? device_settings::Language::English : device_settings::Language::Chinese);
+      resetPage(0, 2);
+      hostState.received = hostState.wifi = hostState.ageKnown = true;
+      hostState.receivedMs = 1000;
+      hostState.ambientLightEnabled = true;
+      hostState.ambientLightRaw = {2382, true};
+      hostState.airRaw = {143, true};
+      writeFrame(output, {english ? "en-ambient-info" : "zh-ambient-info", "screen", "info", 0, 1000, "zh", "sample_sensors_no_io"});
+    }
     captureGarden(output);
     device_settings::setLanguage(device_settings::Language::Chinese);
     resetPage(0, 4); model.timer().start(1000);

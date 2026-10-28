@@ -28,6 +28,7 @@
 | `S\|token\|env` | `E:temperature:humidity:valid` | valid=1才报告温度/空气湿度 |
 | `S\|token\|air` | `A:raw:valid` | ADC，不是CO₂或PM2.5 |
 | `S\|token\|uv` | `U:raw:valid` | ADC，不是lux或光合强度 |
+| `S\|token\|ambient` | `B:raw:valid` | Grove Light v1.2环境光ADC，越亮越大，不是lux；与灯带light查询不同 |
 | `S\|token\|pump` | `P:enabled:on:remaining_ms` | 能力、控制状态和剩余时长 |
 | `S\|token\|light` | `L:enabled:on` | 灯能力及控制状态 |
 | `S\|token\|printer` | `T:enabled:status` | off/idle/queued/sent/fail |

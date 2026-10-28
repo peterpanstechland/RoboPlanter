@@ -20,6 +20,7 @@
 #define ROBO_SOIL_WET_RAW -1
 #define ROBO_ENABLE_AIR 0
 #define ROBO_ENABLE_UV 0
+#define ROBO_ENABLE_AMBIENT_LIGHT 0 // Grove Light v1.2 on GPIO1, replaces UV/local soil.
 // Air: SERVO2 GPIO8; UV: SERVO3 GPIO1 (cannot share with local soil).
 // Signal pins only; use separate 3.3V/GND, not the Servo 5V power pins.
 #define ROBO_AUX_PINS_CONFIRMED 0

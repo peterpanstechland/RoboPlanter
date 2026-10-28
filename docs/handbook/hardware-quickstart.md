@@ -298,10 +298,11 @@ export ROBOPLANTER_TOKEN
 
 仅设置 `ROBO_ENABLE_SHT31 1`。通过条件是环境 `valid:true`、温湿度落在现场合理范围，改变环境后有合理响应；驱动检查 CRC。DHT11/DHT22/AHT 类模块需要自己的驱动，不改个名字就能运行。
 
-### 8.3 空气和 UV 原始值（可选）
+### 8.3 空气和环境光原始值（可选UV）
 
 - 空气模拟 OUT → **J5 Servo2 pin1 / D9 / GPIO8**。先断开该口的原舵机，电源另按传感器规格接，输出电压合格后才可设 `ROBO_ENABLE_AIR 1` 和 `ROBO_AUX_PINS_CONFIRMED 1`。
-- UV OUT → **J13 Servo3 pin1 / D0 / GPIO1**，Servo3 必须空闲，且不能同时开启本地土壤输入。旧 GPIO9 编码器口有4.7k上拉，不再采用。Air v1.3、UV v1.1 分别只接上述信号脚，红线另接3.3V、黑线共地、白线不接；不能整根插入Servo的5V电源接口。实际接线确认后再开启对应采集和确认标志。
+- 本机当前使用 Grove Light Sensor v1.2 替换UV：黄线 OUT → **J13 Servo3 pin1 / D0 / GPIO1**，红3.3V、黑GND、白不接。启用 `ROBO_ENABLE_AMBIENT_LIGHT 1`，UV/本地土壤保持0。显示环境光ADC，遮挡后降低、照亮后升高；不是lux。
+- 旧选配 UV OUT → **J13 Servo3 pin1 / D0 / GPIO1**，Servo3 必须空闲，且不能同时开启本地土壤输入。旧 GPIO9 编码器口有4.7k上拉，不再采用。Air v1.3、UV v1.1 分别只接上述信号脚，红线另接3.3V、黑线共地、白线不接；不能整根插入Servo的5V电源接口。实际接线确认后再开启对应采集和确认标志。
 
 名称如 Grove Air Quality v1.3 / UV v1.1 不能代替实际型号、电源及输出检查。现有固件只报告 ADC，不能显示 CO₂、PM2.5、UV Index、lux 或光合有效辐射。设置确认标志只是记录你已经完成硬件核对，不会改变电路。
 

@@ -20,7 +20,8 @@ struct State {
   char deviceId[49] = {}, networkError[80] = {};
   NetworkFailure networkFailure = NetworkFailure::None;
   int16_t httpStatus = 0;
-  Reading soilRaw, soilPercent, airRaw, uvRaw, temperature, humidity;
+  Reading soilRaw, soilPercent, airRaw, uvRaw, ambientLightRaw, temperature, humidity;
+  bool ambientLightEnabled = false;
   bool soilCalibrationKnown = false, soilCalibrated = false;
   bool pumpKnown = false, pumpEnabled = false, pumpOn = false;
   bool remainingKnown = false;

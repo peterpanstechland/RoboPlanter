@@ -47,6 +47,9 @@
 #ifndef ROBO_ENABLE_UV
 #define ROBO_ENABLE_UV 0
 #endif
+#ifndef ROBO_ENABLE_AMBIENT_LIGHT
+#define ROBO_ENABLE_AMBIENT_LIGHT 0
+#endif
 #ifndef ROBO_AUX_PINS_CONFIRMED
 #define ROBO_AUX_PINS_CONFIRMED 0
 #endif
@@ -98,6 +101,7 @@ constexpr int Soil = 1;       // D0, SERVO3 signal; supply sensor separately at 
 constexpr int Pump = 7;       // D8/SERVO4: pump OR printer TX, never both.
 constexpr int Air = 8;        // D9, SERVO2 signal: servo must be disconnected.
 constexpr int Uv = 1;         // D0, SERVO3 signal; separate 3.3V supply, no servo.
+constexpr int AmbientLight = 1; // Grove Light v1.2 replaces UV on SERVO3/D0.
 constexpr int Sda = 5;
 constexpr int Scl = 6;
 constexpr int Rgb = 40;       // D13, Grove RGB.
@@ -118,10 +122,12 @@ static_assert(sizeof(ROBO_AP_PASSWORD) >= 9 && sizeof(ROBO_AP_PASSWORD) <= 64,
               "AP password must contain 8..63 characters");
 static_assert(ROBO_SHT31_ADDRESS == 0x44 || ROBO_SHT31_ADDRESS == 0x45,
               "SHT31 supports I2C address 0x44 or 0x45");
-static_assert(!(ROBO_ENABLE_AIR || ROBO_ENABLE_UV) || ROBO_AUX_PINS_CONFIRMED,
+static_assert(!(ROBO_ENABLE_AIR || ROBO_ENABLE_UV || ROBO_ENABLE_AMBIENT_LIGHT) || ROBO_AUX_PINS_CONFIRMED,
               "Confirm SERVO2/3 disconnection and separate 3.3V sensor supply");
 static_assert(!(ROBO_ENABLE_SOIL && ROBO_ENABLE_UV),
               "SERVO3 GPIO1 is shared: local soil and UV cannot both be enabled");
+static_assert(!(ROBO_ENABLE_AMBIENT_LIGHT && (ROBO_ENABLE_SOIL || ROBO_ENABLE_UV)),
+              "SERVO3 GPIO1 supports only one of ambient light, UV or local soil");
 static_assert(!(ROBO_ENABLE_DHT20 && ROBO_ENABLE_SHT31),
               "Choose one environment sensor: Grove v2.0 DHT20 or SHT31");
 static_assert(!ROBO_ENABLE_PUMP || ROBO_PUMP_HARDWARE_CONFIRMED,

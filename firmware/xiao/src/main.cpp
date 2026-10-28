@@ -83,9 +83,11 @@ struct Sample {
   int soil = -1;
   int air = -1;
   int uv = -1;
+  int ambient = -1;
   bool soilValid = false;
   bool airValid = false;
   bool uvValid = false;
+  bool ambientValid = false;
   bool environmentValid = false;
   float temperature = NAN;
   float humidity = NAN;
@@ -196,6 +198,10 @@ void sensorTask(void*) {
       next.uv = readAnalog(pins::Uv);
       next.uvValid = next.uv >= 0 && next.uv <= 4095;
     }
+    if (ROBO_ENABLE_AMBIENT_LIGHT) {
+      next.ambient = readAnalog(pins::AmbientLight);
+      next.ambientValid = next.ambient >= 0 && next.ambient <= 4095;
+    }
     if (ROBO_ENABLE_SHT31)
       next.environmentValid = readSht31(next.temperature, next.humidity);
     if (ROBO_ENABLE_DHT20) {
@@ -221,6 +227,7 @@ Sample copySample() {
   }
   if (static_cast<uint32_t>(millis() - current.timestamp) > 3000) {
     current.soilValid = current.airValid = current.uvValid = false;
+    current.ambientValid = false;
     current.environmentValid = false;
   }
   return current;
@@ -348,6 +355,10 @@ void stateJson(JsonDocument& document) {
   JsonObject uv = document.createNestedObject("uv");
   if (current.uv >= 0) uv["raw"] = current.uv; else uv["raw"] = nullptr;
   uv["valid"] = current.uvValid;
+  JsonObject ambient = document.createNestedObject("ambient_light");
+  ambient["enabled"] = bool(ROBO_ENABLE_AMBIENT_LIGHT);
+  if (current.ambient >= 0) ambient["raw"] = current.ambient; else ambient["raw"] = nullptr;
+  ambient["valid"] = current.ambientValid;
   JsonObject environment = document.createNestedObject("environment");
   environment["valid"] = current.environmentValid;
   if (current.environmentValid) {
@@ -571,7 +582,7 @@ std::string bleResult(const robo::Result& result) {
 std::string bleQuery(const std::string& field) {
   const Sample current = copySample();
   char buffer[32];
-  if ((field == "soil" || field == "air" || field == "uv" || field == "env") &&
+  if ((field == "soil" || field == "air" || field == "uv" || field == "env" || field == "ambient") &&
       static_cast<uint32_t>(millis() - current.timestamp) > 3000) return "E:STALE";
   if (field == "soil") {
     const bool calibrated = robo::calibrated(ROBO_SOIL_DRY_RAW, ROBO_SOIL_WET_RAW);
@@ -580,10 +591,10 @@ std::string bleQuery(const std::string& field) {
       std::to_string(static_cast<int>(lround(robo::soilPercent(current.soil, ROBO_SOIL_DRY_RAW, ROBO_SOIL_WET_RAW)))) : "x";
     return "S:" + raw + ":" + percent + ":" + (current.soilValid ? "1" : "0") + ":" + (calibrated ? "1" : "0");
   }
-  if (field == "air" || field == "uv") {
-    const int raw = field == "air" ? current.air : current.uv;
-    const bool valid = field == "air" ? current.airValid : current.uvValid;
-    return std::string(field == "air" ? "A:" : "U:") + (raw >= 0 ? std::to_string(raw) : "x") + ":" + (valid ? "1" : "0");
+  if (field == "air" || field == "uv" || field == "ambient") {
+    const int raw = field == "air" ? current.air : field == "uv" ? current.uv : current.ambient;
+    const bool valid = field == "air" ? current.airValid : field == "uv" ? current.uvValid : current.ambientValid;
+    return std::string(field == "air" ? "A:" : field == "uv" ? "U:" : "B:") + (raw >= 0 ? std::to_string(raw) : "x") + ":" + (valid ? "1" : "0");
   }
   if (field == "env") {
     if (!current.environmentValid) return "E:x:x:0";
@@ -789,6 +800,7 @@ void setup() {
   if (ROBO_ENABLE_SOIL) { pinMode(pins::Soil, INPUT); analogSetPinAttenuation(pins::Soil, ADC_11db); }
   if (ROBO_ENABLE_AIR) { pinMode(pins::Air, INPUT); analogSetPinAttenuation(pins::Air, ADC_11db); }
   if (ROBO_ENABLE_UV) { pinMode(pins::Uv, INPUT); analogSetPinAttenuation(pins::Uv, ADC_11db); }
+  if (ROBO_ENABLE_AMBIENT_LIGHT) { pinMode(pins::AmbientLight, INPUT); analogSetPinAttenuation(pins::AmbientLight, ADC_11db); }
   if (ROBO_ENABLE_SHT31 || ROBO_ENABLE_DHT20) {
     Wire.begin(pins::Sda, pins::Scl);
     Wire.setClock(100000);

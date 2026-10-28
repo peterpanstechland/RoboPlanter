@@ -31,11 +31,13 @@ bool terminal(const char *status) {
 }
 void networkError(const char *message, NetworkFailure failure = NetworkFailure::Http, int status = 0) {
   xSemaphoreTake(lock, portMAX_DELAY);
+  const bool changed = strcmp(shared.networkError, message) || shared.httpStatus != status;
   copy(shared.networkError, message);
   shared.networkFailure = failure;
   shared.httpStatus = static_cast<int16_t>(status);
   shared.wifi = device_settings::planterNetworkReady();
   xSemaphoreGive(lock);
+  if (changed) Serial.printf("Indicator network: %s\n", message);
 }
 void commandResult(const char *id, const char *status, const char *error,
                    bool blocked, bool uncertain = false) {
@@ -131,6 +133,12 @@ void pollState() {
                            next.soilPercent.value >= 0 && next.soilPercent.value <= 100;
   next.airRaw = reading(doc["air"], "raw");
   next.uvRaw = reading(doc["uv"], "raw");
+  next.ambientLightEnabled = doc["ambient_light"]["enabled"].is<bool>() &&
+                            doc["ambient_light"]["enabled"].as<bool>();
+  if (next.ambientLightEnabled)
+    next.ambientLightRaw = reading(doc["ambient_light"], "raw");
+  next.ambientLightRaw.valid = next.ambientLightRaw.valid &&
+                              next.ambientLightRaw.value >= 0 && next.ambientLightRaw.value <= 4095;
   next.temperature = reading(doc["environment"], "temperature_c");
   next.humidity = reading(doc["environment"], "humidity_pct");
   next.humidity.valid = next.humidity.valid && next.humidity.value >= 0 && next.humidity.value <= 100;
@@ -315,6 +323,17 @@ void networkTask(void *) {
     // Settings service owns the Wi-Fi API. Scanning, switching and connection
     // timeout/retry handling never run in the display/touch task.
     device_settings::service();
+    // Transition-only diagnostics; never log SSID, password, IP or token.
+    const auto wifiStatus = device_settings::wifiState();
+    const unsigned statusBits = unsigned(wifiStatus.phase) | (unsigned(wifiStatus.error) << 4) |
+                                (unsigned(wifiStatus.saved) << 12) | (unsigned(wifiStatus.planterNetwork) << 13);
+    static unsigned lastStatusBits = ~0U;
+    if (statusBits != lastStatusBits) {
+      lastStatusBits = statusBits;
+      Serial.printf("Indicator Wi-Fi: phase=%u error=%u saved=%u storage=%u trusted=%u\n",
+                    unsigned(wifiStatus.phase), unsigned(wifiStatus.error), unsigned(wifiStatus.saved),
+                    unsigned(wifiStatus.persistenceAvailable), unsigned(wifiStatus.planterNetwork));
+    }
     const uint32_t currentNetwork = device_settings::networkRevision();
     const bool planterNetwork = device_settings::planterNetworkReady();
     {

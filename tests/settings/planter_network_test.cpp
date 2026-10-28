@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
     else if (scenario == "commands-queue") settingsTestFailQueueOn = 2;
     else if (scenario == "stops-queue") settingsTestFailQueueOn = 3;
     else if (scenario == "task") settingsTestTaskFail = true;
-    if (scenario != "stop-switch" && scenario != "print") {
+    if (scenario != "stop-switch" && scenario != "print" && scenario != "sensors") {
       CHECK(!planter::begin()); CHECK(settingsTestTask == nullptr);
       CHECK(!device_settings::wifiState().ready); CHECK(!device_settings::planterNetworkReady());
       CHECK(!device_settings::requestScan()); CHECK(!device_settings::requestConnect("office", "test-password"));
@@ -40,6 +40,26 @@ int main(int argc, char **argv) {
       const bool settingsFailed = scenario == "settings-mutex" || scenario == "settings-queue";
       CHECK(settingsTestLiveMutexes == (settingsFailed ? 0U : 1U));
       CHECK(settingsTestLiveQueues == (settingsFailed ? 0U : 1U));
+    } else if (scenario == "sensors") {
+      CHECK(planter::begin());
+      settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"ambient_light":{"enabled":true,"raw":0,"valid":true},"uv":{"raw":987,"valid":true}})";
+      connectConfiguredNetwork();
+      CHECK(planter::snapshot().ambientLightEnabled);
+      CHECK(planter::snapshot().ambientLightRaw.valid);
+      CHECK(planter::snapshot().ambientLightRaw.value == 0);
+      CHECK(planter::snapshot().uvRaw.value == 987);
+      settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"ambient_light":{"enabled":true,"raw":1200,"valid":false}})";
+      pollState(); CHECK(!planter::snapshot().ambientLightRaw.valid);
+      for (const char* raw : {"null", "-1", "4096", "\"1200\""}) {
+        settingsTestStateBody = String("{\"schema_version\":1,\"device_id\":\"mock-planter\",\"sample_age_ms\":0,\"ambient_light\":{\"enabled\":true,\"valid\":true,\"raw\":") + raw + "}}";
+        pollState(); CHECK(!planter::snapshot().ambientLightRaw.valid);
+      }
+      settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"uv":{"raw":321,"valid":true}})";
+      pollState(); CHECK(!planter::snapshot().ambientLightEnabled);
+      CHECK(!planter::snapshot().ambientLightRaw.valid);
+      CHECK(planter::snapshot().uvRaw.value == 321);
+      settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"ambient_light":{"enabled":false,"raw":1200,"valid":true}})";
+      pollState(); CHECK(!planter::snapshot().ambientLightRaw.valid);
     } else if (scenario == "print") {
       CHECK(planter::begin());
       const String modern = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle","text_format":"utf8-raster","layout":"receipt32-v2","autocut":true}})";

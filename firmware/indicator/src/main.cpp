@@ -173,8 +173,9 @@ void infoPage(const State &s,uint32_t now) {
   infoRow(202,Icon::Clock,tr("采样距今","Sample age"),buffer);
   if(s.airRaw.valid)snprintf(buffer,sizeof(buffer),tr("%.0f 原始值%s","%.0f raw%s"),s.airRaw.value,fresh?"":tr(" / 旧值"," / old"));else strlcpy(buffer,tr("暂无有效值","No reading"),sizeof(buffer));
   infoRow(244,Icon::Leaf,tr("空气原始值","Air raw"),buffer);
-  if(s.uvRaw.valid)snprintf(buffer,sizeof(buffer),tr("%.0f 原始值%s","%.0f raw%s"),s.uvRaw.value,fresh?"":tr(" / 旧值"," / old"));else strlcpy(buffer,tr("暂无有效值","No reading"),sizeof(buffer));
-  infoRow(286,Icon::Light,tr("紫外原始值","UV raw"),buffer);
+  const auto &lightReading=s.ambientLightEnabled?s.ambientLightRaw:s.uvRaw;
+  if(lightReading.valid)snprintf(buffer,sizeof(buffer),tr("%.0f 原始值%s","%.0f raw%s"),lightReading.value,fresh?"":tr(" / 旧值"," / old"));else strlcpy(buffer,tr("暂无有效值","No reading"),sizeof(buffer));
+  infoRow(286,Icon::Light,s.ambientLightEnabled?tr("环境光","Ambient"):tr("紫外原始值","UV raw"),buffer);
   g.fillRoundRect(24,348,432,78,12,theme().surface);
   icon(Icon::Yoyo,40,365,34,theme().second);
   label(88,359,tr("YOYO 在手机上陪你","Use YOYO on your phone"),theme().ink);

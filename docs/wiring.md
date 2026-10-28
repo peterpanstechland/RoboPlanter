@@ -4,26 +4,28 @@
 
 ## 当前传感器联调接线（2026-10-28）
 
-以下为本轮接线，优先于后文注明日期的历史候选方案。DHT20 已刷入并收到连续有效读数；Air、UV 尚待现场分线确认与读数验收。
+以下为本轮接线，优先于后文注明日期的历史候选方案。DHT20 已刷入并收到连续有效读数，用户确认手靠近时屏幕读数变化；Air 已启用。用户随后以 Grove Light Sensor v1.2 替换 UV，SERVO3 改为环境光输入。
 
 | 外设 | 信号与供电 | 当前情况 |
 | --- | --- | --- |
 | 电容土壤探头 | Indicator 左侧 ADC，黄色 GPIO27，3.3V/GND | 已有真实原始值，未干湿标定 |
-| Grove Temperature & Humidity v2.0 / DHT20 | Robot IIC1/J11 或 IIC2/J12；SCL GPIO6、SDA GPIO5、3.3V/GND | 已收到 12/12 有效样本，约25.1°C、47.5–49.8% RH；环境变化/拔线现场验收待完成 |
-| Grove Air Quality v1.3 | 黄 SIG → SERVO2/J5 pin1 GPIO8；红线另接 3.3V、黑线 GND、白线不接 | 等待确认接口空闲及分线，默认关闭 |
-| Grove UV v1.1 | 黄 SIG → SERVO3/J13 pin1 GPIO1；红线另接 3.3V、黑线 GND、白线不接 | 等待确认接口空闲及分线，默认关闭 |
+| Grove Temperature & Humidity v2.0 / DHT20 | Robot IIC1/J11 或 IIC2/J12；SCL GPIO6、SDA GPIO5、3.3V/GND | 已收到 12/12 有效样本，约25.1°C、47.5–49.8% RH；用户确认环境变化有响应；拔线恢复尚待现场验收 |
+| Grove Air Quality v1.3 | 黄 SIG → SERVO2/J5 pin1 GPIO8；红线另接 3.3V、黑线 GND、白线不接 | 用户确认SERVO2/D9接线，已启用；20次原始值142–150 |
+| Grove Light Sensor v1.2 | 黄 SIG → SERVO3/J13 pin1 D0/GPIO1；红线另接 3.3V、黑线 GND、白线不接 | 替换UV；用户确认环境光页面正常，数值随遮挡/照亮变化 |
 | 10 颗灯带 | RGB/J7 GPIO40，现有供电接法 | 已验收，亮度 24/255 |
 | 热敏打印机 | RX ← SERVO4/J14 GPIO7；TX → UART/J10 GPIO44；独立 12V、共地 | 已验收日签、比例、预览一致及自动切纸 |
 
-**Air/UV 只能使用 Servo 的信号脚，不能把整根 Grove 线直接插到 Servo 的 5V 电源脚。**需分线或正确接好的转接板。DHT20 则可以用 Grove 线接 IIC 接口。两个 IIC 插座共用总线，不是两个独立控制器。
+**Air/Light 只能使用 Servo 的信号脚，不能把整根 Grove 线直接插到 Servo 的 5V 电源脚。**需分线或正确接好的转接板。DHT20 则可以用 Grove 线接 IIC 接口。两个 IIC 插座共用总线，不是两个独立控制器。
 
-UV 改用 GPIO1，避免旧候选 GPIO9 的板载 4.7k 上拉。GPIO1 不能再同时接本地土壤探头，编译检查会拒绝冲突；当前土壤在 Indicator，不占用它。SERVO4 已由打印占用，水泵保持禁用。超声波型号与水泵接入范围仍待确认。
+环境光使用 GPIO1，避免旧候选 GPIO9 的板载 4.7k 上拉。GPIO1 只能选接环境光、UV或本地土壤中的一种，编译检查会拒绝同时启用；当前土壤在 Indicator，不占用它。SERVO4 已由打印占用，水泵保持禁用。超声波型号与水泵接入范围仍待确认。
 
 DHT20 检查状态、7 字节长度及 CRC；I²C 单次传输超时 30ms，转换等待及忙轮询均有限次。断线、忙超时、校准状态异常或损坏数据均使本次环境数据无效，不沿用旧值；未就绪的工厂校准状态不会被当作测量结果，也不套用 DHT10 的初始化命令。温湿度进入现有 HTTP `environment`、BLE `env`、Indicator 和日签数据通路；YOYO 临时只读 Skill 当前仍只授权土壤，需另行手机验收。
 
-空气/UV 首轮仅报告 ADC，不换算 CO₂、PM2.5、空气质量指数、UV Index 或照度。模拟 ADC 的 `valid` 只代表采样和时效，不能自动识别拔线；需做现场遮挡/环境响应检查。Air 应先在干净空气中稳定，不能用危险气体测试。
+空气/环境光首轮仅报告 ADC，不换算 CO₂、PM2.5、空气质量指数、UV Index 或照度。模拟 ADC 的 `valid` 只代表采样和时效，不能自动识别拔线；需做现场遮挡/环境响应检查。Air 应先在干净空气中稳定，不能用危险气体测试。
 
-资料：[DHT20 V2.0](https://wiki.seeedstudio.com/Grove-Temperature-Humidity-Sensor-DH20/)、[Air Quality v1.3](https://wiki.seeedstudio.com/Grove-Air_Quality_Sensor_v1.3/)、[UV](https://wiki.seeedstudio.com/Grove-UV_Sensor/)。
+Light v1.2 配置为 `ROBO_ENABLE_AMBIENT_LIGHT 1`、`ROBO_ENABLE_UV 0`、`ROBO_ENABLE_SOIL 0`；土壤继续用远端 Indicator。HTTP 使用独立 `ambient_light` 对象，BLE 正式鉴权查询为 `S|token|ambient` → `B:raw:valid`；临时 YOYO 单次土壤权限不自动获得此查询能力。新屏幕按设备的 `ambient_light.enabled` 选择“环境光”，旧UV字段保留且禁用，不能把光敏电阻数值称为紫外强度或lux。
+
+资料：[Light Sensor v1.2](https://wiki.seeedstudio.com/Grove-Light_Sensor/)、[DHT20 V2.0](https://wiki.seeedstudio.com/Grove-Temperature-Humidity-Sensor-DH20/)、[Air Quality v1.3](https://wiki.seeedstudio.com/Grove-Air_Quality_Sensor_v1.3/)、[UV](https://wiki.seeedstudio.com/Grove-UV_Sensor/)。
 
 ## 历史识别记录
 
@@ -58,7 +60,7 @@ DHT20 检查状态、7 字节长度及 CRC；I²C 单次传输超时 30ms，转�
 - **IIC1 / IIC2（J11 / J12）**：共用 GPIO5 SDA、GPIO6 SCL 和 3.3V，是同一条总线的两个插座。候选分配为一路接已确认型号的 I²C 温湿度传感器，另一路接 I²C 水位传感器。现有固件可选 DHT20（本机已确认 Grove v2.0）或 SHT31 驱动，二选一；DHT11/DHT22 不能当作 I²C 模块接入。水位型号仍待水箱尺寸确定，尚无水位驱动。若采用 Grove Water Level Sensor 10cm，需同时处理 `0x77`、`0x78` 两个地址，不能只检查其中一个；10cm 是检测范围，整板长 133mm，不保证适合当前水箱。
 - **RGB（J7）**：接已确认供电和协议的 WS2812 灯带 DIN；该口有 GPIO40 的板载缓冲输出。灯带电流按灯数与亮度核算。
 - **打印串口（SERVO4 + UART）**：D8/GPIO7/J14 pin1 → 打印机 RX；打印机 TX 经电平确认后 → GPIO44/J10 pin2。公共地，打印机独立供电；不使用插座电源脚。GPIO43 不接打印机。
-- **Servo3（J13）的信号脚**：本轮分配给 UV 模拟输入 GPIO1；与本地土壤候选互斥。使用转接线另取 3.3V，不能把 Servo 电源脚当成 3.3V。
+- **Servo3（J13）的信号脚**：本轮分配给环境光（替换UV）模拟输入 GPIO1；与本地土壤候选互斥。使用转接线另取 3.3V，不能把 Servo 电源脚当成 3.3V。
 - **Servo4（J14）的信号脚**：GPIO7 当前专用于打印，水泵保持禁用。未来水泵须另选可用 GPIO 与外置驱动，不能直接插到 Servo 或板载 5V 电机输出。
 - **Servo2（J5）的信号脚**：断开原舵机后，可复用 GPIO8 为已核实的 Air Quality v1.3 模拟输入。
 - **UV**：GPIO1 / Servo3 替代旧 GPIO9 候选；GPIO9 的上拉不适合直接按无负载 ADC 使用。
@@ -127,7 +129,7 @@ DHT20 检查状态、7 字节长度及 CRC；I²C 单次传输超时 30ms，转�
 ```text
 Indicator ── Wi-Fi / HTTP ──→ XIAO ──→ 传感器、灯带、外置泵驱动、打印机
                                  ↑
-Robot Phone 上的 YOYO ── BLE ────┘  （目标链路，手机鉴权/回包仍待验收）
+Robot Phone 上的 YOYO ── BLE ────┘  （私有Skill单次土壤读取已验收，持续凭据下发待完成）
              ↑
 NFC 贴 ── 手机入口/任务转发 ──────┘  （碰贴入口探索中）
 ```

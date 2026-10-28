@@ -97,11 +97,11 @@ const char *errorText(WifiError error) {
     case WifiError::Busy: return tr("正在处理，请稍候", "Busy. Please wait");
     case WifiError::AuthFailed: return tr("密码错误或认证失败", "Authentication failed");
     case WifiError::NetworkNotFound: return tr("未找到网络", "Network not found");
-    case WifiError::Timeout: return tr("连接超时，请重试", "Connection timed out");
+    case WifiError::Timeout: return tr("连接超时，稍后自动重连", "Timed out; auto-retry soon");
     case WifiError::Disconnected: return tr("连接已断开", "Disconnected");
     case WifiError::ScanFailed: return tr("扫描失败，请刷新", "Scan failed. Refresh");
     case WifiError::StorageUnavailable: return tr("设置未能保存", "Settings could not be saved");
-    case WifiError::ConnectionFailed: return tr("连接失败，请重试", "Connection failed");
+    case WifiError::ConnectionFailed: return tr("连接失败，稍后自动重连", "Failed; auto-retry soon");
     default: return "";
   }
 }
@@ -180,7 +180,8 @@ void drawWifi(const ui_theme::Theme &t) {
   const char *ssid = state.phase == WifiPhase::Connected ? state.connectedSsid : state.targetSsid;
   text(24, 116, ssid[0] ? ssid : tr("仅支持 2.4 GHz 网络", "2.4 GHz networks only"), t.muted, 16);
   if (state.error != WifiError::None) text(24, 138, errorText(state.error), t.accent, 16);
-  else text(24, 138, tr("Wi-Fi 连通不代表花盆已连通", "Wi-Fi is separate from the planter link"), t.muted, 16);
+  else text(24, 138, state.saved ? tr("已保存，上电自动连接", "Saved. Reconnects on startup") :
+            tr("连接成功后自动保存", "Saves after a successful connection"), t.muted, 16);
   for (unsigned row = 0; row < 5; ++row) {
     const unsigned index = networkPage * 5 + row;
     if (index >= listCount || state.scanning) break;
