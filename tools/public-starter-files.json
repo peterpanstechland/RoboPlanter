@@ -151,6 +151,7 @@
     "tests/test_device_kit.py",
     "tests/test_indicator_assets.py",
     "tests/test_indicator_font.py",
+    "tests/test_honor_skill.py",
     "tests/test_light_effects.py",
     "tests/test_mcp_bridge.py",
     "tests/test_mcp_result_validation.py",

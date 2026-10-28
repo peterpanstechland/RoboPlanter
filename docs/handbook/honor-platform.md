@@ -72,7 +72,7 @@ references/ble-contract.md
 references/acceptance.md
 ```
 
-当前源码构建包为 **0.3.0**，增加连贯闲聊与短句表达，保留固定无效凭据的 BLE 联通诊断，不含设备凭据，正式硬件控制保持关闭。网站下载以其发布manifest为准，源码更新不表示网站已部署。可先阅读 [包内文件说明](../../integrations/yoyo/skill-draft/README.md)。
+当前源码构建包为 **0.3.2**，提供连贯闲聊与短句表达，保留固定无效凭据的 BLE 联通诊断，不含设备凭据，正式读数和硬件控制保持关闭。网站下载以其发布manifest为准，源码更新不表示网站已部署。可先阅读 [包内文件说明](../../integrations/yoyo/skill-draft/README.md)。
 
 ## 4. 导入 ZIP
 
