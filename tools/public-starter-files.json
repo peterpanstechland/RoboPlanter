@@ -39,6 +39,7 @@
     "firmware/indicator/include/local_soil.h",
     "firmware/indicator/include/planter_client.h",
     "firmware/indicator/include/planter_presentation.h",
+    "firmware/indicator/include/receipt_preview.h",
     "firmware/indicator/include/settings_ui.h",
     "firmware/indicator/include/soil_wire.h",
     "firmware/indicator/include/ui_glyphs.h",

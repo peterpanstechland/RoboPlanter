@@ -12,6 +12,7 @@
 #include "lcd_diagnostics.h"
 #include "planter_client.h"
 #include "planter_presentation.h"
+#include "receipt_preview.h"
 #include "ui_model.h"
 #include "ui_photos.h"
 #include "ui_text.h"
@@ -266,14 +267,18 @@ void confirmPage(const State &s,uint32_t now) {
     label(264,210,duration,theme().cardInk,3);
     label(260,270,tr("按时长控制，不估算水量","Timed pulse, not volume"),theme().cardMuted);
     centered(326,tr("确认后发送一次浇水指令","One watering request on confirmation."),theme().ink);
+  } else if (confirmReceipt.layout32) {
+    receipt_preview::draw(g,confirmReceipt.text,54,142,372,204,theme().card,theme().cardInk);
+    centered(352,s.printerAutocut?tr("已启用自动切纸 · 请留意出纸口","Auto-cut enabled. Keep the outlet clear."):
+      tr("打印后请沿撕纸口取下","Tear off the receipt after printing."),theme().muted);
   } else {
     g.fillRect(54,148,372,192,theme().card);
     for(int x=54;x<426;x+=12) {g.fillTriangle(x,148,x+6,142,x+11,148,theme().card);g.fillTriangle(x,340,x+6,346,x+11,340,theme().card);}
     char visible[sizeof(confirmReceipt.text)];memcpy(visible,confirmReceipt.text,sizeof(visible));
     char *line=visible;unsigned row=0;
-    while(*line && row<5) {
+    while(*line && row<6) {
       char *next=strchr(line,'\n');if(next)*next=0;
-      ui_text::drawSized(g,76,row?208+(row-1)*28:167,line,theme().cardInk,row?16:24);
+      ui_text::drawSized(g,76,row?202+(row-1)*25:167,line,theme().cardInk,row?16:24);
       ++row;if(!next)break;line=next+1;
     }
     for(int x=75;x<406;x+=12)g.drawFastHLine(x,199,6,theme().cardMuted);
@@ -281,7 +286,8 @@ void confirmPage(const State &s,uint32_t now) {
       tr("打印后请沿撕纸口取下","Tear off the receipt after printing."),theme().muted);
   }
   pill(kConfirmCancel,tr("取消","Cancel"),theme().card,theme().cardInk);
-  const bool changed=!water&&confirmReceipt.requiresRaster&&!s.printerRaster;
+  const bool changed=!water&&((confirmReceipt.requiresRaster&&!s.printerRaster)||
+    (confirmReceipt.layout32&&!s.printerLayout32));
   const bool active=enabled(confirmAction,s,now)&&!changed;
   pill(kConfirmGo,active?(water?tr("确认浇水","Water now"):tr("打印这张便签","Print note")):
     changed?tr("请重新打开预览","Reopen preview"):disabledReason(confirmAction,s,now),active?theme().second:theme().surface,active?contrastInk(theme().second):theme().muted);

@@ -3,68 +3,69 @@
 #include "printer_text.h"
 
 namespace robo {
-// One band is 48 bytes * 32 rows. Data is MSB first, 1 = black.
-inline void renderPrinterLine(const std::string& text, const PrinterLine& line, uint8_t* pixels) {
-  std::memset(pixels, 0, PrinterRowBytes * printer_font::kLineHeight);
-  uint16_t x = PrinterMargin;
-  size_t offset = line.begin;
-  while (offset < line.end) {
-    uint16_t code = 0;
-    if (!nextPrinterCode(text, offset, code)) return; // Layout already validated.
-    const auto* glyph = printer_font::find(code);
-    if (!glyph) return;
-    const uint8_t stride = (glyph->width+7)/8;
-    for (uint8_t row = 0; row < glyph->height; ++row) {
-      for (uint8_t col = 0; col < glyph->width; ++col) {
-        if (!(printer_font::kBitmap[glyph->offset+row*stride+col/8] & (0x80 >> (col%8)))) continue;
-        const int px = x + glyph->x + col, py = glyph->y + row;
-        if (px >= 0 && px < PrinterWidth && py >= 0 && py < printer_font::kLineHeight)
-          pixels[py*PrinterRowBytes+px/8] |= 0x80 >> (px%8);
+// Shared by the UART encoder and screen preview. The 32-row scratch buffer
+// remains fixed even when a text line spans bands; no whole-page allocation.
+inline void renderPrinterBand(const std::string& text, const PrinterLayout& layout,
+                              uint16_t startY, uint8_t rows, uint8_t* pixels) {
+  std::memset(pixels, 0, PrinterRowBytes * rows);
+  for (uint8_t lineIndex=0; lineIndex<layout.count; ++lineIndex) {
+    const auto& line = layout.lines[lineIndex];
+    const uint16_t top = printerLineTop(lineIndex);
+    if (top >= startY+rows || top+printer_font::kLineHeight <= startY) continue;
+    uint16_t x = lineIndex ? PrinterMargin : (PrinterWidth-line.width)/2;
+    size_t offset = line.begin;
+    while (offset < line.end) {
+      uint16_t code = 0;
+      if (!nextPrinterCode(text, offset, code)) return;
+      const auto* glyph = printer_font::find(code);
+      if (!glyph) return;
+      const uint8_t stride = (glyph->width+7)/8;
+      for (uint8_t row=0; row<glyph->height; ++row) {
+        const int py = top+glyph->y+row-startY;
+        if (py<0 || py>=rows) continue;
+        for (uint8_t col=0; col<glyph->width; ++col) {
+          if (!(printer_font::kBitmap[glyph->offset+row*stride+col/8] & (0x80>>(col%8)))) continue;
+          const int px = x+glyph->x+col;
+          if (px>=0 && px<PrinterWidth) pixels[py*PrinterRowBytes+px/8] |= 0x80>>(px%8);
+        }
       }
+      x += glyph->advance;
     }
-    x += glyph->advance;
   }
+  const uint16_t separator = PrinterMargin+printer_font::kLineHeight+4;
+  if (layout.count>1 && separator>=startY && separator<startY+rows)
+    for (uint16_t x=PrinterMargin; x<PrinterWidth-PrinterMargin; ++x)
+      if ((x-PrinterMargin)%8<4) pixels[(separator-startY)*PrinterRowBytes+x/8] |= 0x80>>(x%8);
 }
 
-constexpr size_t MaxReceiptRows = 2*PrinterMargin + MaxPrinterLines*printer_font::kLineHeight;
-constexpr size_t MaxReceiptWireBytes = 2 + (MaxPrinterLines+2)*8 + MaxReceiptRows*PrinterRowBytes + 6;
-// Zero denotes invalid text. Includes initialization, every raster header,
-// top/bottom margins, feed and the optional cutter, for a baud-derived deadline.
+constexpr size_t MaxReceiptRows = 2*PrinterMargin + MaxPrinterLines*printer_font::kLineHeight + PrinterTitleExtra;
+constexpr size_t MaxReceiptWireBytes = 2 + ((MaxReceiptRows+PrinterBandRows-1)/PrinterBandRows)*8 + MaxReceiptRows*PrinterRowBytes + 6;
 inline size_t plannedReceiptBytes(const std::string& text, bool cut = false) {
   PrinterLayout layout;
   if (!printerTextLayout(text, layout)) return 0;
-  const size_t rows = 2*PrinterMargin + layout.count*printer_font::kLineHeight;
-  return 2 + (layout.count+2)*8 + rows*PrinterRowBytes + (cut ? 6 : 3);
+  const size_t rows = printerLayoutRows(layout);
+  return 2 + ((rows+PrinterBandRows-1)/PrinterBandRows)*8 + rows*PrinterRowBytes + (cut ? 6 : 3);
 }
 
-// Only fixed firmware commands are emitted, after validating the full text.
-// Never retry a write or reach the cutter after an earlier write failure.
 template <typename Write>
 bool writeReceipt(const std::string& text, Write write, bool cut = false) {
   PrinterLayout layout;
   if (!printerTextLayout(text, layout)) return false;
   if (!write(0x1B) || !write('@')) return false;
-  const auto band = [&](const uint8_t* pixels, uint16_t rows) {
-    const uint8_t header[] = {0x1D, 0x76, 0x30, 0x00, PrinterRowBytes, 0x00,
-                             static_cast<uint8_t>(rows), static_cast<uint8_t>(rows>>8)};
-    for (uint8_t byte : header) if (!write(byte)) return false;
+  uint8_t pixels[PrinterRowBytes*PrinterBandRows];
+  const uint16_t total = printerLayoutRows(layout);
+  for (uint16_t y=0; y<total; y+=PrinterBandRows) {
+    const uint8_t rows = static_cast<uint8_t>(total-y<PrinterBandRows ? total-y : PrinterBandRows);
+    renderPrinterBand(text, layout, y, rows, pixels);
+    const uint8_t header[] = {0x1D,0x76,0x30,0x00,PrinterRowBytes,0x00,rows,0x00};
+    for (uint8_t byte:header) if (!write(byte)) return false;
     for (size_t i=0; i<PrinterRowBytes*rows; ++i) if (!write(pixels[i])) return false;
-    return true;
-  };
-  uint8_t pixels[PrinterRowBytes*printer_font::kLineHeight] = {};
-  if (!band(pixels, PrinterMargin)) return false;
-  for (uint8_t line=0; line<layout.count; ++line) {
-    renderPrinterLine(text, layout.lines[line], pixels);
-    if (!band(pixels, printer_font::kLineHeight)) return false;
   }
-  std::memset(pixels, 0, sizeof pixels);
-  if (!band(pixels, PrinterMargin)) return false;
-  // Exactly the supplied sample's feed, followed by optional GS V 0.
-  const uint8_t feed[] = {0x1B, 0x64, 0x06};
-  for (uint8_t byte : feed) if (!write(byte)) return false;
+  const uint8_t feed[] = {0x1B,0x64,0x06};
+  for (uint8_t byte:feed) if (!write(byte)) return false;
   if (cut) {
-    const uint8_t cutter[] = {0x1D, 0x56, 0x00};
-    for (uint8_t byte : cutter) if (!write(byte)) return false;
+    const uint8_t cutter[] = {0x1D,0x56,0x00};
+    for (uint8_t byte:cutter) if (!write(byte)) return false;
   }
   return true;
 }

@@ -7,6 +7,7 @@
 #include "../../firmware/xiao/include/ble_session.h"
 #include "../../firmware/xiao/include/printer_receipt.h"
 #include "../../firmware/xiao/include/printer_transport.h"
+#include "../../firmware/indicator/include/receipt_preview.h"
 
 namespace {
 int checks = 0;
@@ -348,14 +349,66 @@ void blePreparedWriteBoundary() {
   CHECK(!buffer.append({}, 0, bytes(last), last.size()));
   CHECK(!buffer.finish(owner, output));
 }
+void receiptTypography() {
+  const std::string text = "M\nM";
+  std::string encoded;
+  CHECK(robo::writeReceipt(text,[&](uint8_t b) { encoded.push_back(static_cast<char>(b)); return true; }));
+  std::vector<uint8_t> raster;
+  size_t offset=2;
+  while (encoded.compare(offset,4,std::string("\x1dv0\0",4))==0) {
+    const size_t rows=static_cast<uint8_t>(encoded[offset+6]);
+    offset+=8;
+    raster.insert(raster.end(),encoded.begin()+offset,encoded.begin()+offset+rows*48);
+    offset+=rows*48;
+  }
+  const auto* glyph=printer_font::find('M');
+  CHECK(glyph!=nullptr);
+  bool allPixelsMatch=true;
+  const int height=static_cast<int>(raster.size()/48);
+  for (int y=0;y<height;++y) for(int x=0;x<384;++x) {
+    bool expected=false;
+    for(int line=0;line<2;++line) {
+      const int gx=x-(line?16:(384-glyph->advance)/2)-glyph->x;
+      const int gy=y-(line?72:16)-glyph->y;
+      if(gx>=0&&gx<glyph->width&&gy>=0&&gy<glyph->height)
+        expected|=(printer_font::kBitmap[glyph->offset+gy*((glyph->width+7)/8)+gx/8]&(0x80>>(gx%8)))!=0;
+    }
+    expected|=y==64&&x>=16&&x<368&&(x-16)%8<4;
+    allPixelsMatch &= expected == ((raster[y*48+x/8]&(0x80>>(x%8)))!=0);
+  }
+  CHECK(allPixelsMatch); // Independent glyph positioning across 32-row boundaries.
+  struct Canvas {
+    int w,h; bool bounds=true; std::vector<uint8_t> bits;
+    Canvas(int width,int height):w(width),h(height),bits(width*height,0){}
+    void fillRect(int x,int y,int width,int height,uint16_t color) {
+      for(int row=y;row<y+height;++row) drawFastHLine(x,row,width,color);
+    }
+    void drawFastHLine(int x,int y,int width,uint16_t color) {
+      if(x<0||y<0||x+width>w||y>=h) { bounds=false;return; }
+      for(int col=x;col<x+width;++col) bits[y*w+col]=static_cast<uint8_t>(color);
+    }
+  } canvas(384,height);
+  CHECK(receipt_preview::draw(canvas,text.c_str(),0,0,384,height,0,1));
+  bool previewMatches=true;
+  for(int y=0;y<height;++y) for(int x=0;x<384;++x)
+    previewMatches &= canvas.bits[y*384+x] == ((raster[y*48+x/8]>>(7-x%8))&1);
+  CHECK(previewMatches&&canvas.bounds);
+  Canvas small(372,204);
+  CHECK(receipt_preview::draw(small,"1\n2\n3\n4\n5\n6\n7\n8",0,0,372,204,0,1));
+  CHECK(small.bounds);
+  robo::PrinterLayout layout;
+  CHECK(robo::printerTextLayout("RoboPlanter\nDaily garden check-in\nCheck your plant\nbefore watering.\nCare for your plant.\nTake a little break.\n",layout));
+  CHECK(layout.count<=8);
+}
+
 void receiptTransport() {
   CHECK(robo::printerTransmitBudgetMs(0, 115200) == 0);
-  CHECK(robo::printerTransmitBudgetMs(14001, 115200) == 0);
+  CHECK(robo::printerTransmitBudgetMs(20001, 115200) == 0);
   CHECK(robo::printerTransmitBudgetMs(1, 9599) == 0);
   CHECK(robo::printerTransmitBudgetMs(1, 1000001) == 0);
   CHECK(robo::printerTransmitBudgetMs(1, 9600) == 5002);
-  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 9600) == 18692);
-  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 115200) == 6141);
+  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 9600) == 24917);
+  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 115200) == 6660);
   CHECK(robo::printerTransmitBudgetMs(14000, 1000000) == 5140);
   std::string output;
   const auto append = [&](uint8_t b) { output.push_back(static_cast<char>(b)); return true; };
@@ -379,7 +432,7 @@ void receiptTransport() {
     for (size_t i=0; i<width*height; ++i) if (output[offset+i]) ++ink;
     offset += width*height; rows += height; ++bands;
   }
-  CHECK(offset == output.size()-6); CHECK(rows == 112); CHECK(bands == 5); CHECK(ink > 0);
+  CHECK(offset == output.size()-6); CHECK(rows == 176); CHECK(bands == 6); CHECK(ink > 0);
   output.clear(); CHECK(robo::writeReceipt(text, append));
   CHECK(output == expected.substr(0,expected.size()-3)); // Cutter is opt-in.
   output.clear(); CHECK(robo::writeReceipt(text+"\n", append,true));
@@ -398,7 +451,7 @@ void receiptTransport() {
   CHECK(robo::printerTextLayout("1\n2\n3\n4\n5\n6\n7\n8\n",layout)); CHECK(layout.count == 8);
   CHECK(robo::plannedReceiptBytes("1\n2\n3\n4\n5\n6\n7\n8\n",true) == robo::MaxReceiptWireBytes);
   std::string row;
-  for (int i=0;i<15;++i) row += "\xe4\xb8\xad";
+  for (int i=0;i<11;++i) row += "\xe4\xb8\xad";
   CHECK(robo::printerTextLayout(row,layout)); CHECK(layout.count == 1);
   row += "\xe4\xb8\xad";
   CHECK(robo::printerTextLayout(row,layout)); CHECK(layout.count == 2);
@@ -424,6 +477,7 @@ int main() {
   disabledAndInterlock(); printerAndCalibration(); cacheCapacity();
   lightEffectCommands();
   receiptTransport();
+  receiptTypography();
   bleConnectionBoundary(); blePreparedWriteBoundary();
   std::cout << "PASS " << checks << " controller checks\n";
   return 0;

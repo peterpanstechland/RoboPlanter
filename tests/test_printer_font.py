@@ -36,7 +36,7 @@ class PrinterFontTests(unittest.TestCase):
         for char in "gypqj|@/()工位花园温度，。薄荷九层塔蔷薇多肉　 ":
             with self.subTest(char=char):
                 glyph = font_build.rasterize(self.font, char)
-                direct = Image.new("L", (72, 64))
+                direct = Image.new("L", (96, 96))
                 ImageDraw.Draw(direct).text((16, 16 + font_build.BASELINE), char,
                                            font=self.font, fill=255, anchor="ls")
                 direct = direct.point(lambda value: 255 if value >= font_build.THRESHOLD else 0)
@@ -54,7 +54,7 @@ class PrinterFontTests(unittest.TestCase):
             output = Path(folder) / "printer_font.h"
             count, bitmap_bytes = font_build.generate(font_build.DEFAULT_FONT, output)
             self.assertEqual(count, 7540)
-            self.assertEqual(bitmap_bytes, 497684)
+            self.assertEqual(bitmap_bytes, 857846)
             self.assertEqual(output.read_bytes(), font_build.DEFAULT_OUTPUT.read_bytes())
 
 

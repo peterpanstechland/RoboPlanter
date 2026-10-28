@@ -7,6 +7,7 @@ enum class NetworkFailure : uint8_t { None, Configuration, Http, Authentication,
 struct PrintReceipt {
   char text[161] = {};
   bool requiresRaster = false;
+  bool layout32 = false;
 };
 struct State {
   bool received = false, wifi = false;
@@ -24,6 +25,7 @@ struct State {
   bool lightKnown = false, lightEnabled = false, lightOn = false;
   bool printerKnown = false, printerEnabled = false;
   bool printerRaster = false, printerAutocut = false;
+  bool printerLayout32 = false;
   char printerStatus[25] = {};
   char requestId[33] = {}, commandStatus[25] = {}, commandError[80] = {};
   bool commandBlocked = false, uncertain = false;

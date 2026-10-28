@@ -148,6 +148,7 @@ void pollState() {
   next.printerEnabled = next.printerKnown && printer["enabled"].as<bool>();
   if (next.printerKnown) copy(next.printerStatus, printer["status"]);
   next.printerRaster = next.printerKnown && !strcmp(printer["text_format"] | "", "utf8-raster");
+  next.printerLayout32 = next.printerRaster && !strcmp(printer["layout"] | "", "receipt32-v1");
   next.printerAutocut = next.printerKnown && printer["autocut"].is<bool>() && printer["autocut"].as<bool>();
 
   xSemaphoreTake(lock, portMAX_DELAY);
@@ -247,7 +248,8 @@ void sendCommand(const Command &command) {
     commandResult(command.id, "not_sent", "Unavailable or stale device state", false); return;
   }
   if (command.action == Action::Print && (!strcmp(state.printerStatus, "recovery_required") ||
-      (command.receipt.requiresRaster && !state.printerRaster))) {
+      (command.receipt.requiresRaster && !state.printerRaster) ||
+      (command.receipt.layout32 && !state.printerLayout32))) {
     commandResult(command.id, "not_sent", "Printer needs recovery or a new preview", false); return;
   }
   StaticJsonDocument<512> doc;
@@ -400,7 +402,8 @@ bool submit(Action action, bool lightOn, const PrintReceipt *receipt) {
   if (!enabled || !shared.wifi || shared.networkRevision != device_settings::networkRevision() ||
       !device_settings::planterNetworkReady() || (!stop && (!fresh(shared, millis()) || shared.commandBlocked)) ||
       (action == Action::Print && (!strcmp(shared.printerStatus, "recovery_required") ||
-       (receipt->requiresRaster && !shared.printerRaster)))) {
+       (receipt->requiresRaster && !shared.printerRaster) ||
+       (receipt->layout32 && !shared.printerLayout32)))) {
     xSemaphoreGive(lock); return false;
   }
   Command command{action, lightOn, {}, device_settings::networkRevision(), {}};

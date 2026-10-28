@@ -77,6 +77,8 @@ The connection is local HTTP protected by the XIAO's Wi-Fi and matching token, n
 
 ## Pairing and diagnostics
 
+When the device advertises `printer.layout="receipt32-v1"`, the print preview uses the same 32px font, line wrapping and raster bands as the printer, fitted to the screen with its aspect ratio preserved. The first line is centered and separated from the body; the paper uses 44-dot line spacing. A queued preview cannot silently downgrade to another layout. The larger maximum receipt has a 35-second result window, including slow 9600-baud transmission and device scheduling margin. Screen pixels do not represent physical millimeters.
+
 Run `python tools/pair_indicator.py --url http://<current-XIAO-IP> --device-id <device_id>` from the repository root to generate the ignored `include/local_config.h` from the existing private XIAO configuration, after one authenticated read-only identity check. Use `--replace` to update existing pairing fields while retaining other local options, then rebuild and upload. The Settings → Planter connection page shows the configured origin, paired network and HTTP/error status, never the token. It can restore the paired Wi-Fi; it does not change the trusted origin or credential. Print recovery requires inspection and restart of both the printer and controller, not repeated commands.
 
 ## On-device checks still required

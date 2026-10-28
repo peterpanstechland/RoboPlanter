@@ -8,9 +8,12 @@ namespace robo {
 constexpr size_t MaxPrinterTextBytes = 160;
 constexpr uint16_t PrinterWidth = 384;
 constexpr uint16_t PrinterRowBytes = PrinterWidth / 8;
-constexpr uint8_t PrinterMargin = 8;
+constexpr uint8_t PrinterMargin = 16;
+constexpr uint8_t PrinterBandRows = 32;
+constexpr uint8_t PrinterTitleExtra = 12;
+constexpr const char* PrinterLayoutVersion = "receipt32-v1";
 constexpr uint8_t MaxPrinterLines = 8;
-struct PrinterLine { uint16_t begin = 0, end = 0; };
+struct PrinterLine { uint16_t begin = 0, end = 0, width = 0; };
 struct PrinterLayout { PrinterLine lines[MaxPrinterLines]; uint8_t count = 1; };
 
 // Strict UTF-8 for this BMP font. Unsupported codepoints are rejected, not replaced.
@@ -67,7 +70,14 @@ inline bool printerTextLayout(const std::string& text, PrinterLayout& layout) {
     }
     x += glyph->advance;
     layout.lines[layout.count-1].end = static_cast<uint16_t>(offset);
+    layout.lines[layout.count-1].width = x - PrinterMargin;
   }
   return true;
+}
+inline uint16_t printerLineTop(uint8_t line) {
+  return PrinterMargin + line*printer_font::kLineHeight + (line ? PrinterTitleExtra : 0);
+}
+inline uint16_t printerLayoutRows(const PrinterLayout& layout) {
+  return 2*PrinterMargin + layout.count*printer_font::kLineHeight + PrinterTitleExtra;
 }
 }

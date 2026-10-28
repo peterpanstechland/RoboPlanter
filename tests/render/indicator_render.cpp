@@ -356,7 +356,7 @@ void interactionTests() {
     tapRect(kConfirmGo, available, 1300);
     require(submitted.size() == 1, "A further tap outside an action cannot resubmit");
   }
-  available.printerRaster = true;
+  available.printerRaster = available.printerLayout32 = true;
   device_settings::setLanguage(device_settings::Language::Chinese);
   resetPage(0, 1); controlsOpen = true; touch = ui::TouchGate(); submitted.clear(); submittedReceipts.clear();
   tapRect(kHardware[3], available, 1100);
@@ -479,6 +479,7 @@ void capturePrinter(const std::filesystem::path &output) {
     hostState.received = hostState.wifi = hostState.ageKnown = true;
     hostState.receivedMs = 1000;
     hostState.printerKnown = hostState.printerEnabled = hostState.printerRaster = hostState.printerAutocut = true;
+    hostState.printerLayout32 = true;
     host_fixture::wifi.ready = host_fixture::wifi.planterNetwork = true;
     host_fixture::wifi.phase = device_settings::WifiPhase::Connected;
     confirmReceipt = planter_presentation::receipt(hostState, lang != 0);

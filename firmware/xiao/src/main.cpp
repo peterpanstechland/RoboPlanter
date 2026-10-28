@@ -343,6 +343,7 @@ void stateJson(JsonDocument& document) {
   printer["enabled"] = ROBO_ENABLE_PRINTER && ActionsReady;
   printer["status"] = std::string(controller.printerStatus());
   printer["text_format"] = "utf8-raster";
+  printer["layout"] = robo::PrinterLayoutVersion;
   printer["paper_width_dots"] = 384;
   printer["autocut"] = static_cast<bool>(ROBO_PRINTER_CUTTER_CONFIRMED);
   // The sample documents transport/cutter commands, not a status response.

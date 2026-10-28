@@ -32,6 +32,7 @@ Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/m
 | `light.enabled`、`on`、`effect` | 灯带功能、目标开关及模式；关灯时模式为 `solid` |
 | `printer.enabled`、`status` | 打印功能与软件发送状态：disabled / idle / queued / bytes_sent / recovery_required |
 | `printer.text_format`、`paper_width_dots`、`autocut`、`feedback` | 新固件为 utf8-raster、384、切刀配置布尔值、unavailable；旧固件可能缺省 |
+| `printer.layout` | `receipt32-v1` 表示 32 点阵字、44 点行高、居中首行布局；旧固件缺省，不能据此显示新布局的精确预览 |
 | `last_command.request_id`、`status`、`error` | 最近命令的关联标识、结果及错误 |
 
 未启用的数值返回 `null`，不能用零值替代。采样失效时可保留原始 ADC 供诊断，但客户端必须依据 `valid` 和采样年龄判断；未标定的湿度百分比为 `null`。打印机串口发送完成只代表字节交给串口，不代表纸张实际打印完成；实际纸尽、过热和完成反馈需按打印机型号增加。发送中断时本次结果为 `printer_write_failed`，状态进入 `recovery_required` 并拒绝新打印（`printer_recovery_required`）。检查后重启打印机与主控清除残留，不自动重放旧任务。详见 [打印教程](handbook/uart-printer.md)。

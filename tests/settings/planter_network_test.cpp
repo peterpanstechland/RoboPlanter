@@ -42,13 +42,15 @@ int main(int argc, char **argv) {
       CHECK(settingsTestLiveQueues == (settingsFailed ? 0U : 1U));
     } else if (scenario == "print") {
       CHECK(planter::begin());
-      const String modern = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle","text_format":"utf8-raster","autocut":true}})";
+      const String modern = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle","text_format":"utf8-raster","layout":"receipt32-v1","autocut":true}})";
+      const String oldRaster = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle","text_format":"utf8-raster"}})";
       const String legacy = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle"}})";
       settingsTestStateBody = modern; connectConfiguredNetwork();
       CHECK(planter::snapshot().printerRaster && planter::snapshot().printerAutocut);
       auto zh = planter_presentation::receipt(planter::snapshot(), false);
       auto en = planter_presentation::receipt(planter::snapshot(), true);
       CHECK(zh.requiresRaster && !en.requiresRaster);
+      CHECK(zh.layout32 && en.layout32);
       CHECK(strlen(zh.text) <= 160 && strlen(en.text) <= 160);
       const String approved = zh.text;
       CHECK(!planter::submit(planter::Action::Print));
@@ -66,12 +68,12 @@ int main(int argc, char **argv) {
       auto fallback = planter_presentation::receipt(planter::snapshot(), false);
       CHECK(!fallback.requiresRaster && !strcmp(fallback.text, en.text));
       for (const unsigned char *p = reinterpret_cast<const unsigned char *>(fallback.text); *p; ++p) CHECK(*p < 128);
-      auto modernState = planter::snapshot(); modernState.printerRaster = true;
+      auto modernState = planter::snapshot(); modernState.printerRaster = modernState.printerLayout32 = true;
       zh = planter_presentation::receipt(modernState, false);
       CHECK(!planter::submit(planter::Action::Print, false, &zh));
       settingsTestStateBody = modern; pollState();
       CHECK(planter::submit(planter::Action::Print, false, &zh));
-      settingsTestStateBody = legacy; pollState(); workerOnce();
+      settingsTestStateBody = oldRaster; pollState(); workerOnce();
       CHECK(settingsTestPosts.size() == 1);
       CHECK(!strcmp(planter::snapshot().commandStatus, "not_sent"));
       settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"recovery_required","text_format":"utf8-raster"}})";

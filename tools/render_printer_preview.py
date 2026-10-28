@@ -25,7 +25,7 @@ def decode_receipt(data: bytes) -> Image.Image:
         packed.extend(data[offset:offset + size])
         height += rows
         offset += size
-    if not 1 <= height <= 272:
+    if not 1 <= height <= 396:
         raise ValueError("Unexpected receipt height")
     if data[offset:] not in (b"\x1bd\x06", b"\x1bd\x06\x1dV\0"):
         raise ValueError("Unexpected feed/cut tail")

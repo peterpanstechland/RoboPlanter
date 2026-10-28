@@ -7,11 +7,12 @@ namespace planter_presentation {
 // The bytes displayed in the confirmation page are copied into the command
 // queue. Neither a language change nor a later capability poll rewrites them.
 inline planter::PrintReceipt receipt(const planter::State &state, bool english) {
-  constexpr char zh[] = "工位盆栽\n今日花园签到\n先看看植物，再决定浇水。\n照料植物，也记得休息。\n";
-  constexpr char en[] = "RoboPlanter\nDaily garden check-in\nCheck your plant before watering.\nCare for your plant.\nTake a little break.\n";
+  constexpr char zh[] = "工位盆栽\n今日花园签到\n先看植物，再决定浇水。\n照料植物，也记得休息。\n";
+  constexpr char en[] = "RoboPlanter\nDaily garden check-in\nCheck your plant\nbefore watering.\nCare for your plant.\nTake a little break.\n";
   static_assert(sizeof(zh) <= 161 && sizeof(en) <= 161, "Receipt exceeds device byte limit");
   planter::PrintReceipt out;
   out.requiresRaster = !english && state.printerRaster;
+  out.layout32 = state.printerLayout32;
   strcpy(out.text, out.requiresRaster ? zh : en);
   return out;
 }
