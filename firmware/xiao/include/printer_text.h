@@ -9,9 +9,10 @@ constexpr size_t MaxPrinterTextBytes = 160;
 constexpr uint16_t PrinterWidth = 384;
 constexpr uint16_t PrinterRowBytes = PrinterWidth / 8;
 constexpr uint8_t PrinterMargin = 16;
-constexpr uint8_t PrinterBandRows = 32;
+constexpr uint8_t PrinterBandRows = 32; // Rendering scratch only.
+constexpr uint16_t PrinterCommandRows = 128; // EM5826H compresses short raster commands.
 constexpr uint8_t PrinterTitleExtra = 12;
-constexpr const char* PrinterLayoutVersion = "receipt32-v1";
+constexpr const char* PrinterLayoutVersion = "receipt32-v2";
 constexpr uint8_t MaxPrinterLines = 8;
 struct PrinterLine { uint16_t begin = 0, end = 0, width = 0; };
 struct PrinterLayout { PrinterLine lines[MaxPrinterLines]; uint8_t count = 1; };

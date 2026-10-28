@@ -18,6 +18,7 @@ RoboPlanter 是一个以工位绿植为起点的开源硬件项目，将 YOYO �
 | 查询地区、作物和生长阶段相关资料 | [作物知识库](crop-knowledge.md) |
 | 配置常亮、呼吸、流动和彩虹灯效 | [灯带教程](ws2812-lighting.md) |
 | 连接串口打印机 | [小票打印教程](uart-printer.md) |
+| 打印 Logo、植物状态、待办和塔罗 | [工位日签](daily-ticket.md) |
 | 编写、导入和测试 YOYO Skill | [荣耀 Skill 图文教程](honor-platform.md) |
 | 了解 BLE 参数、鉴权和回包 | [BLE 接入教程](ble-integration.md) |
 | 为其他控制板添加能力描述 | [Device Kit](device-platform.md) |

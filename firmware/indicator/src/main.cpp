@@ -25,6 +25,7 @@ bool displayReady=false, clientReady=false, controlsOpen=false, prefsReady=false
 bool confirmOpen=false;
 planter::Action confirmAction=planter::Action::Water;
 planter::PrintReceipt confirmReceipt;
+uint8_t dailyPreviewPage=0;
 ui::Model model;
 ui::TouchGate touch;
 Preferences preferences;
@@ -257,6 +258,7 @@ const char *commandLabel(const State &s) {
 void confirmPage(const State &s,uint32_t now) {
   auto &g=indicator::display();const bool water=confirmAction==planter::Action::Water;
   title(water?tr("确认浇水","Water plant?"):tr("打印便签","Print a note"),water?tr("浇水前，先看看土壤和接水盘","Check the soil and tray first."):
+    confirmReceipt.isDaily?"":
     confirmReceipt.requiresRaster?tr("预览与实际发送文字一致","This text will be sent to the printer."):
     tr("英文便签 · 兼容旧版打印固件","This text will be sent to the printer."));
   if(water) {
@@ -267,6 +269,10 @@ void confirmPage(const State &s,uint32_t now) {
     label(264,210,duration,theme().cardInk,3);
     label(260,270,tr("按时长控制，不估算水量","Timed pulse, not volume"),theme().cardMuted);
     centered(326,tr("确认后发送一次浇水指令","One watering request on confirmation."),theme().ink);
+  } else if (confirmReceipt.isDaily) {
+    receipt_preview::drawDaily(g,confirmReceipt.daily,dailyPreviewPage,48,110,theme().card,theme().cardInk);
+    char page[64];snprintf(page,sizeof(page),tr("滑动 %u/%u","Swipe %u/%u"),dailyPreviewPage+1,receipt_preview::DailyPreviewPages);
+    label(318,88,page,theme().muted);
   } else if (confirmReceipt.layout32) {
     receipt_preview::draw(g,confirmReceipt.text,54,142,372,204,theme().card,theme().cardInk);
     centered(352,s.printerAutocut?tr("已启用自动切纸 · 请留意出纸口","Auto-cut enabled. Keep the outlet clear."):
@@ -287,7 +293,7 @@ void confirmPage(const State &s,uint32_t now) {
   }
   pill(kConfirmCancel,tr("取消","Cancel"),theme().card,theme().cardInk);
   const bool changed=!water&&((confirmReceipt.requiresRaster&&!s.printerRaster)||
-    (confirmReceipt.layout32&&!s.printerLayout32));
+    (confirmReceipt.layout32&&!s.printerLayout32)||(confirmReceipt.isDaily&&!s.printerDaily));
   const bool active=enabled(confirmAction,s,now)&&!changed;
   pill(kConfirmGo,active?(water?tr("确认浇水","Water now"):tr("打印这张便签","Print note")):
     changed?tr("请重新打开预览","Reopen preview"):disabledReason(confirmAction,s,now),active?theme().second:theme().surface,active?contrastInk(theme().second):theme().muted);
@@ -389,7 +395,13 @@ void handle(ui::Gesture gesture,const State &s,uint32_t now) {
   }
   if(gesture!=ui::Gesture::Tap) {
     if(model.themesOpen())return;
-    if(confirmOpen){confirmOpen=false;return;}
+    if(confirmOpen){
+      if(confirmReceipt.isDaily&&confirmAction==planter::Action::Print){
+        if(gesture==ui::Gesture::SwipeLeft&&dailyPreviewPage+1<receipt_preview::DailyPreviewPages)++dailyPreviewPage;
+        if(gesture==ui::Gesture::SwipeRight&&dailyPreviewPage>0)--dailyPreviewPage;
+      }else confirmOpen=false;
+      return;
+    }
     if(controlsOpen){controlsOpen=false;return;}
     model.handleGesture(gesture);return;
   }
@@ -415,7 +427,11 @@ void handle(ui::Gesture gesture,const State &s,uint32_t now) {
     for(uint8_t i=0;i<4;++i)if(tapped(kHardware[i])&&enabled(kActions[i],s,now)) {
       if(kActions[i]==planter::Action::Water||kActions[i]==planter::Action::Print){
         confirmAction=kActions[i];
-        if(confirmAction==planter::Action::Print)confirmReceipt=planter_presentation::receipt(s,device_settings::getLanguage()==device_settings::Language::English);
+        if(confirmAction==planter::Action::Print){
+          bool english=device_settings::getLanguage()==device_settings::Language::English;
+          confirmReceipt=s.printerDaily?planter_presentation::dailyReceipt(s,english,static_cast<int>(garden_store::model().selected()),[]{return esp_random();}):planter_presentation::receipt(s,english);
+          dailyPreviewPage=0;
+        }
         confirmOpen=true;
       }
       else planter::submit(kActions[i],!s.lightOn);

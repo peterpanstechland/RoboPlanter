@@ -5,6 +5,7 @@
 #include <string>
 #include "light_effects.h"
 #include "printer_text.h"
+#include "daily_ticket.h"
 
 namespace robo {
 
@@ -21,6 +22,8 @@ struct Command {
   bool on = false;
   bool hasText = false;
   std::string text;
+  bool hasDaily = false;
+  DailyTicket daily;
   bool hasEffect = false;
   std::string effect;
 };
@@ -31,7 +34,8 @@ inline bool samePayload(const Command& a, const Command& b) {
     sameEffect = (a.hasEffect ? a.effect : "solid") == (b.hasEffect ? b.effect : "solid");
   return a.action == b.action && a.hasDuration == b.hasDuration &&
          a.durationMs == b.durationMs && a.hasOn == b.hasOn && a.on == b.on &&
-         a.hasText == b.hasText && a.text == b.text && sameEffect;
+         a.hasText == b.hasText && a.text == b.text && sameEffect &&
+         a.hasDaily == b.hasDaily && sameDaily(a.daily,b.daily);
 }
 
 struct Result {
@@ -123,7 +127,7 @@ class Controller {
     } else if (command.action == "light") {
       lightOn_ = command.on;
       lightEffect_ = command.on && command.hasEffect ? command.effect : "solid";
-    } else if (command.action == "print") {
+    } else if ((command.action == "print" || command.action == "print_daily" || command.action == "print_calibration")) {
       if (printerRecoveryRequired_) return reject(command, "printer_recovery_required");
       if (pumpOn_) return reject(command, "pump_busy");
       if (printerBusy_) return reject(command, "printer_busy");
@@ -201,7 +205,9 @@ class Controller {
 
   std::string validate(const Command& c) const {
     if (c.action != "water" && c.action != "stop_water" &&
-        c.action != "light" && c.action != "print") return "unknown_action";
+        c.action != "light" && c.action != "print" && c.action != "print_daily" && c.action != "print_calibration") return "unknown_action";
+    if (c.hasDaily && c.action != "print_daily") return "unexpected_fields";
+    if (c.action == "print_daily" && (!c.hasDaily || !validDaily(c.daily))) return "invalid_daily_ticket";
     if (c.action == "stop_water") {
       if (c.hasDuration || c.hasOn || c.hasText || c.hasEffect) return "unexpected_fields";
       return "";
@@ -221,6 +227,12 @@ class Controller {
         LightEffect effect;
         if (!c.on || !parseLightEffect(c.effect, effect)) return "invalid_light_fields";
       }
+    } else if (c.action == "print_calibration") {
+      if (!config_.printerEnabled) return "printer_disabled";
+      if (c.hasText || c.hasDuration || c.hasOn || c.hasEffect) return "unexpected_fields";
+    } else if (c.action == "print_daily") {
+      if (!config_.printerEnabled) return "printer_disabled";
+      if (c.hasText || c.hasDuration || c.hasOn || c.hasEffect) return "unexpected_fields";
     } else if (c.action == "print") {
       if (!config_.printerEnabled) return "printer_disabled";
       if (!c.hasText || c.hasDuration || c.hasOn || c.hasEffect || !printableText(c.text))

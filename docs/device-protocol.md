@@ -32,7 +32,7 @@ Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/m
 | `light.enabled`、`on`、`effect` | 灯带功能、目标开关及模式；关灯时模式为 `solid` |
 | `printer.enabled`、`status` | 打印功能与软件发送状态：disabled / idle / queued / bytes_sent / recovery_required |
 | `printer.text_format`、`paper_width_dots`、`autocut`、`feedback` | 新固件为 utf8-raster、384、切刀配置布尔值、unavailable；旧固件可能缺省 |
-| `printer.layout` | `receipt32-v1` 表示 32 点阵字、44 点行高、居中首行布局；旧固件缺省，不能据此显示新布局的精确预览 |
+| `printer.layout` | `receipt32-v2` 表示 32 点阵字、44 点行高、居中首行布局；旧固件缺省，不能据此显示新布局的精确预览 |
 | `last_command.request_id`、`status`、`error` | 最近命令的关联标识、结果及错误 |
 
 未启用的数值返回 `null`，不能用零值替代。采样失效时可保留原始 ADC 供诊断，但客户端必须依据 `valid` 和采样年龄判断；未标定的湿度百分比为 `null`。打印机串口发送完成只代表字节交给串口，不代表纸张实际打印完成；实际纸尽、过热和完成反馈需按打印机型号增加。发送中断时本次结果为 `printer_write_failed`，状态进入 `recovery_required` 并拒绝新打印（`printer_recovery_required`）。检查后重启打印机与主控清除残留，不自动重放旧任务。详见 [打印教程](handbook/uart-printer.md)。
@@ -101,3 +101,19 @@ python tools/device_cli.py print 'Hello planter'
 手机仅发送 UTF-8 `Q|<临时值>`（共18字节，适配默认20字节 ATT 载荷），等待业务回包。首次正确请求先消耗凭据，再返回现有 `S:<raw>:<percent或x>:<valid>:<calibrated>` 土壤格式。错误、已使用、过期或撤销的凭据返回 `E:AUTH`；重启同样清除会话。客户端不能自动重试或把 `x` 当成湿度百分比。
 
 2026-10-26 已在 XIAO 真机验证单次返回 `S:2522:x:1:0`、重复拒绝、到期拒绝、撤销拒绝及执行器权限隔离。私有0.2.2经用户明确授权提交荣耀私有测试后，用户现场确认 Robot Phone 读到2529；未额外采集手机 NOTIFY 原始日志。随后主动撤销会话，设备确认 `disabled:true`。公开源码和公开0.2.1包不含该临时值；该次测试不等于正式长期凭据机制已完成。
+
+## Structured daily ticket (local HTTP)
+
+`printer.daily_layout="garden-daily-v2"` advertises the shared 384 × 1536-dot daily template and verified 128-row raster transport. `print_daily` accepts **only** `request_id`, `action`, and a `daily` object with all eight integer fields below. Booleans, omitted fields, extra fields and out-of-range values are rejected before printing.
+
+```json
+{"request_id":"daily-example-1","action":"print_daily","daily":{"card":17,"reversed":0,"english":0,"species":0,"soil":-9999,"raw":-9999,"temperature":-9999,"humidity":-9999}}
+```
+
+- `card`: 0–77; 0–21 major arcana; then Wands, Cups, Swords, Pentacles, each Ace–Ten, Page, Knight, Queen, King.
+- `reversed`, `english`: 0 or 1. `species`: 0 Mint, 1 Basil, 2 Rose, 3 Succulent; this is the user's garden selection, not automatic plant recognition.
+- `soil`: calibrated percent 0–100; `raw`: ADC 0–4095; `temperature`: tenths °C −400–850; `humidity`: percent 0–100. Each uses **−9999** for unavailable. Indicator freezes fresh readings when opening the preview, never substitutes game statistics or zero for missing data.
+
+The request is a client-supplied snapshot; it does not authorize watering. The preview, RTOS queue and dedupe cache retain the complete snapshot, including the draw and orientation. Conflicting contents under one ID are rejected. Existing printer enable/token/pump interlocks, cache exhaustion and partial-write recovery latch apply. A 73,832-byte maximum daily job takes a bounded UART budget (81,909ms at 9600 baud, including 5s margin); Indicator allows 100s for resolution. No automatic reprint or mechanical-success claim.
+
+Authenticated `{"request_id":"scale-test-1","action":"print_calibration"}` prints a diagnostic with matching 128-dot squares/circles using A: 32-row and B: 128-row command bands. No other action fields are accepted. This diagnostic deliberately retains A's defective mode for comparison; production tickets use B. Both new actions are local HTTP only; BLE and the existing cloud/MCP whitelist are unchanged.

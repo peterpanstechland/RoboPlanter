@@ -403,12 +403,12 @@ void receiptTypography() {
 
 void receiptTransport() {
   CHECK(robo::printerTransmitBudgetMs(0, 115200) == 0);
-  CHECK(robo::printerTransmitBudgetMs(20001, 115200) == 0);
+  CHECK(robo::printerTransmitBudgetMs(75001, 115200) == 0);
   CHECK(robo::printerTransmitBudgetMs(1, 9599) == 0);
   CHECK(robo::printerTransmitBudgetMs(1, 1000001) == 0);
   CHECK(robo::printerTransmitBudgetMs(1, 9600) == 5002);
-  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 9600) == 24917);
-  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 115200) == 6660);
+  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 9600) == 30642);
+  CHECK(robo::printerTransmitBudgetMs(robo::MaxReceiptWireBytes, 115200) == 7137);
   CHECK(robo::printerTransmitBudgetMs(14000, 1000000) == 5140);
   std::string output;
   const auto append = [&](uint8_t b) { output.push_back(static_cast<char>(b)); return true; };
@@ -427,12 +427,12 @@ void receiptTransport() {
     CHECK(output.substr(offset,4) == std::string("\x1d\x76\x30\x00",4));
     const auto byte = [&](size_t i) { return static_cast<unsigned char>(output[offset+i]); };
     const size_t width = byte(4) + 256U*byte(5), height = byte(6) + 256U*byte(7);
-    CHECK(width == 48); CHECK(height > 0 && height <= 32);
+    CHECK(width == 48); CHECK(height == 128);
     offset += 8; CHECK(offset+width*height <= output.size()-6);
     for (size_t i=0; i<width*height; ++i) if (output[offset+i]) ++ink;
     offset += width*height; rows += height; ++bands;
   }
-  CHECK(offset == output.size()-6); CHECK(rows == 176); CHECK(bands == 6); CHECK(ink > 0);
+  CHECK(offset == output.size()-6); CHECK(rows == 256); CHECK(bands == 2); CHECK(ink > 0);
   output.clear(); CHECK(robo::writeReceipt(text, append));
   CHECK(output == expected.substr(0,expected.size()-3)); // Cutter is opt-in.
   output.clear(); CHECK(robo::writeReceipt(text+"\n", append,true));

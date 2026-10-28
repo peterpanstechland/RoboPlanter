@@ -70,15 +70,19 @@ python tools/pair_indicator.py --url http://<XIAO当前IP> --device-id <实际de
 
 正文为严格 UTF-8，最多 **160 字节**，不等于 160 个汉字。字库包含 7,540 个 ASCII/GB2312 映射字符，使用 Noto Sans SC 的 32 像素点阵和 44 像素行高；最多自动换行到 8 行。首行居中，标题与正文间有额外留白和分隔线；左右各留 16 点，中文一行最多约 11 字。支持换行，不支持用户传入的 ESC、其他控制码、emoji 或字库外字符。不合法正文会在发送任何打印字节前拒绝。
 
-新布局通过 `printer.layout:"receipt32-v1"` 声明。Indicator 对该布局直接使用打印机同一套字库、换行和点阵渲染，整页按等比例缩小到预览区；它不代表纸张的实际毫米尺寸。预览后若设备降级到不支持该布局的版本，需重新打开预览后确认，不能沿用旧预览直接发送。
+新布局通过 `printer.layout:"receipt32-v2"` 声明。Indicator 对该布局直接使用打印机同一套字库、换行和点阵渲染，整页按等比例缩小到预览区；它不代表纸张的实际毫米尺寸。预览后若设备降级到不支持该布局的版本，需重新打开预览后确认，不能沿用旧预览直接发送。
 
-固件按最多 32 行像素分带发送，单个缓冲区 1,536 字节，无整页大缓冲。超时预算按实际光栅字节数和波特率计算，另留 5 秒余量，覆盖 9600 波特的长小票。字库随源码提交，正常编译不需要下载原始字体；再生成使用 `tools/build_printer_font.py`，字体版权与 OFL 见 [字体说明](../../firmware/indicator/assets/fonts/README.md)。
+固件每条光栅命令固定发送 **128 行**，末尾不足 128 行补白；每块仍分四次使用 32 行临时缓冲生成，单个缓冲区 1,536 字节，无整页大缓冲。EM5826H 实机对照发现 32 行命令会导致纵向压缩，128 行正常，因此不能把渲染缓冲大小直接用作打印分块高度。超时预算按实际光栅字节数和波特率计算，另留 5 秒余量，覆盖 9600 波特的长小票。字库随源码提交，正常编译不需要下载原始字体；再生成使用 `tools/build_printer_font.py`，字体版权与 OFL 见 [字体说明](../../firmware/indicator/assets/fonts/README.md)。
 
 离线检查可将 `tests/core/printer_preview.cpp` 编译成主机程序，运行 `printer_preview.exe note.txt receipt.bin cut`，再运行 `python tools/render_printer_preview.py receipt.bin preview.png`。这会调用与设备相同的编码器，不访问打印机。PNG 只预览纸面点阵，不模拟切刀效果。
 
 `completed` / `bytes_sent` 仅证明 UART 完成发送，不能代替实际出纸或切刀确认；`feedback:"unavailable"` 明确表示没有机械反馈。发送中断后本次请求为 `printer_write_failed`，状态锁定为 `recovery_required`，后续新打印拒绝为 `printer_recovery_required`。这避免下一张被未收完的光栅包吞掉；检查纸张和线路后，应重启打印机与主控清除残留，不能只重发请求。重启前结果不明的原任务不可自动重放。
 
 当前 D8 分配不允许同时启用打印和水泵；今后另行分配泵引脚后仍须保留动作互斥。本地 MCP 可提交同样的受限 UTF-8 正文；云端写操作和 YOYO 手机打印仍需独立接入与验收，本次固件变更不会自动开放它们。
+
+## 工位日签
+
+新固件声明 `printer.daily_layout:"garden-daily-v2"` 后，Indicator 的打印预览会切换为 Logo、植物快照、三行待办、78 张牌随机正逆位塔罗的完整日签。左右滑动查看全部内容，确认只提交一次；详见 [工位日签](daily-ticket.md)。旧固件保留短文字便签。
 
 ## 打印后检查
 

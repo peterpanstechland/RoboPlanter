@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
       CHECK(settingsTestLiveQueues == (settingsFailed ? 0U : 1U));
     } else if (scenario == "print") {
       CHECK(planter::begin());
-      const String modern = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle","text_format":"utf8-raster","layout":"receipt32-v1","autocut":true}})";
+      const String modern = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle","text_format":"utf8-raster","layout":"receipt32-v2","autocut":true}})";
       const String oldRaster = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle","text_format":"utf8-raster"}})";
       const String legacy = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle"}})";
       settingsTestStateBody = modern; connectConfiguredNetwork();
@@ -79,6 +79,26 @@ int main(int argc, char **argv) {
       settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"recovery_required","text_format":"utf8-raster"}})";
       pollState(); CHECK(!planter::submit(planter::Action::Print, false, &zh));
       settingsTestStateBody = modern; pollState();
+      const String dailyState = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"printer":{"enabled":true,"status":"idle","text_format":"utf8-raster","daily_layout":"garden-daily-v2"}})";
+      settingsTestStateBody=dailyState;pollState();CHECK(planter::snapshot().printerDaily);
+      auto preview=planter_presentation::dailyReceipt(planter::snapshot(),false,2,[]{return 155U;});
+      CHECK(preview.daily.card==77 && preview.daily.reversed==1 && preview.daily.soil==-9999);
+      CHECK(planter::submit(planter::Action::Print,false,&preview));
+      preview.daily.card=0; // The queue owns the approved 78th card, not this mutation.
+      settingsTestPostHook = [&](const String& body){
+        StaticJsonDocument<1024> doc;CHECK(!deserializeJson(doc,body));
+        CHECK(!strcmp(doc["action"]|"","print_daily"));CHECK(!doc.containsKey("text"));
+        robo::DailyTicket decoded;CHECK(robo::readDaily(doc["daily"],decoded));
+        CHECK(decoded.card==77 && decoded.reversed==1 && decoded.species==2);
+        doc["daily"]["card"]=78;CHECK(!robo::readDaily(doc["daily"],decoded));
+        doc["daily"]["card"]=0;doc["daily"]["extra"]=1;CHECK(!robo::readDaily(doc["daily"],decoded));
+        settingsTestPostBody="{\"ok\":true,\"request_id\":\""+String(doc["request_id"]|"")+"\",\"status\":\"completed\"}";
+      };
+      workerOnce();CHECK(settingsTestPosts.size()==2);
+      CHECK(planter::submit(planter::Action::Print,false,&preview));
+      settingsTestStateBody=modern;pollState();workerOnce();CHECK(settingsTestPosts.size()==2);
+      CHECK(!strcmp(planter::snapshot().commandStatus,"not_sent"));
+      CHECK(!planter::submit(planter::Action::Print,false,&preview));
       settingsTestGetCode = 401; pollState();
       auto state = planter::snapshot();
       CHECK(state.networkFailure == planter::NetworkFailure::Authentication && state.httpStatus == 401);

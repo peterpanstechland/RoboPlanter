@@ -15,6 +15,9 @@
 
 #include "controller.h"
 #include "printer_receipt.h"
+#include "daily_receipt.h"
+#include "daily_json.h"
+#include "printer_calibration.h"
 #include "printer_transport.h"
 #include "ble_session.h"
 #include "robo_config.h"
@@ -88,7 +91,7 @@ struct Sample {
   uint32_t timestamp = 0;
 };
 Sample sample;
-struct PrintJob { char id[33]; char text[robo::MaxPrintBytes + 1]; };
+struct PrintJob { char id[33]; char text[robo::MaxPrintBytes + 1]; bool isDaily; bool calibration; robo::DailyTicket daily; };
 struct BleJob { robo::BleTicket ticket; char text[MaxBleBytes + 1]; };
 
 class Lock {
@@ -237,7 +240,7 @@ void printerTask(void*) {
     if (xQueueReceive(printQueue, &job, portMAX_DELAY) != pdTRUE) continue;
     const uint32_t started = millis();
     const uint32_t budget = robo::printerTransmitBudgetMs(
-        robo::plannedReceiptBytes(job.text, ROBO_PRINTER_CUTTER_CONFIRMED), ROBO_PRINTER_BAUD);
+        job.calibration ? robo::CalibrationWireBytes : job.isDaily ? robo::DailyReceiptBytes+6 : robo::plannedReceiptBytes(job.text, ROBO_PRINTER_CUTTER_CONFIRMED), ROBO_PRINTER_BAUD);
     // Transmission is bounded and occurs in this low priority task. It never
     // holds the controller mutex or delays the independent pump deadline task.
     const auto writeByte = [&](uint8_t byte) {
@@ -253,7 +256,8 @@ void printerTask(void*) {
       return false;
     };
     bool success = ROBO_ENABLE_PRINTER && budget &&
-                   robo::writeReceipt(job.text, writeByte, ROBO_PRINTER_CUTTER_CONFIRMED);
+                   (job.calibration ? robo::writePrinterCalibration(writeByte, ROBO_PRINTER_CUTTER_CONFIRMED) : job.isDaily ? robo::writeDailyReceipt(job.daily, writeByte, ROBO_PRINTER_CUTTER_CONFIRMED) :
+                    robo::writeReceipt(job.text, writeByte, ROBO_PRINTER_CUTTER_CONFIRMED));
     if (success) {
       const uint32_t elapsed = millis() - started;
       success = elapsed < budget &&
@@ -274,10 +278,11 @@ robo::Result processCommand(const robo::Command& command) {
     writePump();
   }
   if (result.ok && !result.duplicate && command.action == "light") applyLight(true);
-  if (result.ok && !result.duplicate && command.action == "print") {
+  if (result.ok && !result.duplicate && (command.action == "print" || command.action == "print_daily" || command.action == "print_calibration")) {
     PrintJob job{};
     memcpy(job.id, command.requestId.data(), command.requestId.size());
     memcpy(job.text, command.text.data(), command.text.size());
+    job.calibration=command.action=="print_calibration";job.isDaily=command.action=="print_daily"; job.daily=command.daily;
     if (xQueueSend(printQueue, &job, 0) != pdTRUE) {
       Lock guard(coreMutex);
       controller.finishPrint(command.requestId, false);
@@ -344,6 +349,7 @@ void stateJson(JsonDocument& document) {
   printer["status"] = std::string(controller.printerStatus());
   printer["text_format"] = "utf8-raster";
   printer["layout"] = robo::PrinterLayoutVersion;
+  printer["daily_layout"] = robo::DailyLayoutVersion;
   printer["paper_width_dots"] = 384;
   printer["autocut"] = static_cast<bool>(ROBO_PRINTER_CUTTER_CONFIRMED);
   // The sample documents transport/cutter commands, not a status response.
@@ -451,7 +457,7 @@ void httpCommand() {
     const char* key = pair.key().c_str();
     if (strcmp(key, "request_id") && strcmp(key, "action") &&
         strcmp(key, "duration_ms") && strcmp(key, "on") && strcmp(key, "text") &&
-        strcmp(key, "effect")) {
+        strcmp(key, "effect") && strcmp(key, "daily")) {
       sendError(400, "unexpected_fields"); return;
     }
   }
@@ -467,6 +473,8 @@ void httpCommand() {
   command.hasOn = object.containsKey("on");
   command.hasText = object.containsKey("text");
   command.hasEffect = object.containsKey("effect");
+  command.hasDaily = object.containsKey("daily");
+  if(command.hasDaily && !robo::readDaily(object["daily"],command.daily)){sendError(400,"invalid_daily_ticket");return;}
   if (command.hasDuration) {
     if (object["duration_ms"].is<bool>() || !object["duration_ms"].is<int64_t>()) {
       sendError(400, "invalid_duration"); return;

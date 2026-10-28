@@ -38,13 +38,16 @@ inline void renderPrinterBand(const std::string& text, const PrinterLayout& layo
       if ((x-PrinterMargin)%8<4) pixels[(separator-startY)*PrinterRowBytes+x/8] |= 0x80>>(x%8);
 }
 
-constexpr size_t MaxReceiptRows = 2*PrinterMargin + MaxPrinterLines*printer_font::kLineHeight + PrinterTitleExtra;
-constexpr size_t MaxReceiptWireBytes = 2 + ((MaxReceiptRows+PrinterBandRows-1)/PrinterBandRows)*8 + MaxReceiptRows*PrinterRowBytes + 6;
+inline uint16_t printerReceiptRows(const PrinterLayout& layout) {
+  return (printerLayoutRows(layout)+PrinterCommandRows-1)/PrinterCommandRows*PrinterCommandRows;
+}
+constexpr size_t MaxReceiptRows = ((2*PrinterMargin + MaxPrinterLines*printer_font::kLineHeight + PrinterTitleExtra+PrinterCommandRows-1)/PrinterCommandRows)*PrinterCommandRows;
+constexpr size_t MaxReceiptWireBytes = 2 + (MaxReceiptRows/PrinterCommandRows)*8 + MaxReceiptRows*PrinterRowBytes + 6;
 inline size_t plannedReceiptBytes(const std::string& text, bool cut = false) {
   PrinterLayout layout;
   if (!printerTextLayout(text, layout)) return 0;
-  const size_t rows = printerLayoutRows(layout);
-  return 2 + ((rows+PrinterBandRows-1)/PrinterBandRows)*8 + rows*PrinterRowBytes + (cut ? 6 : 3);
+  const size_t rows = printerReceiptRows(layout);
+  return 2 + (rows/PrinterCommandRows)*8 + rows*PrinterRowBytes + (cut ? 6 : 3);
 }
 
 template <typename Write>
@@ -53,13 +56,14 @@ bool writeReceipt(const std::string& text, Write write, bool cut = false) {
   if (!printerTextLayout(text, layout)) return false;
   if (!write(0x1B) || !write('@')) return false;
   uint8_t pixels[PrinterRowBytes*PrinterBandRows];
-  const uint16_t total = printerLayoutRows(layout);
-  for (uint16_t y=0; y<total; y+=PrinterBandRows) {
-    const uint8_t rows = static_cast<uint8_t>(total-y<PrinterBandRows ? total-y : PrinterBandRows);
-    renderPrinterBand(text, layout, y, rows, pixels);
-    const uint8_t header[] = {0x1D,0x76,0x30,0x00,PrinterRowBytes,0x00,rows,0x00};
+  const uint16_t total = printerReceiptRows(layout);
+  for (uint16_t top=0; top<total; top+=PrinterCommandRows) {
+    const uint8_t header[] = {0x1D,0x76,0x30,0x00,PrinterRowBytes,0x00,128,0x00};
     for (uint8_t byte:header) if (!write(byte)) return false;
-    for (size_t i=0; i<PrinterRowBytes*rows; ++i) if (!write(pixels[i])) return false;
+    for(uint16_t y=top;y<top+PrinterCommandRows;y+=PrinterBandRows) {
+      renderPrinterBand(text, layout, y, PrinterBandRows, pixels);
+      for (uint8_t byte:pixels) if (!write(byte)) return false;
+    }
   }
   const uint8_t feed[] = {0x1B,0x64,0x06};
   for (uint8_t byte:feed) if (!write(byte)) return false;

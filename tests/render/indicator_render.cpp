@@ -365,6 +365,20 @@ void interactionTests() {
   device_settings::setLanguage(device_settings::Language::English);
   tapRect(kConfirmGo, available, 1200);
   require(submittedReceipts.size() == 1 && submittedReceipts[0] == preview, "Changing language after preview must not change approved receipt bytes");
+  available.printerDaily=true;
+  resetPage(0,1);controlsOpen=true;touch=ui::TouchGate();submitted.clear();
+  tapRect(kHardware[3],available,1400);
+  const auto approvedDaily=confirmReceipt.daily;
+  require(confirmReceipt.isDaily&&dailyPreviewPage==0,"Daily preview starts on the logo without sending");
+  handle(ui::Gesture::SwipeLeft,available,1450);
+  require(confirmOpen&&dailyPreviewPage==1&&submitted.empty(),"Daily swipe browses instead of printing or closing");
+  for(int i=0;i<20;++i)handle(ui::Gesture::SwipeLeft,available,1500+i);
+  require(dailyPreviewPage==receipt_preview::DailyPreviewPages-1,"Daily preview stops at last viewport");
+  for(int i=0;i<20;++i)handle(ui::Gesture::SwipeRight,available,1550+i);
+  require(dailyPreviewPage==0&&robo::sameDaily(approvedDaily,confirmReceipt.daily),"Browsing cannot redraw the card or snapshot");
+  tapRect(kConfirmCancel,available,1600);
+  require(!confirmOpen&&submitted.empty(),"Cancelling a daily ticket never prints");
+  available.printerDaily=false;
   strcpy(available.printerStatus, "recovery_required");
   require(!enabled(planter::Action::Print, available, 1200), "Printer recovery must block another receipt");
   available.printerStatus[0] = 0;
@@ -484,6 +498,10 @@ void capturePrinter(const std::filesystem::path &output) {
     host_fixture::wifi.phase = device_settings::WifiPhase::Connected;
     confirmReceipt = planter_presentation::receipt(hostState, lang != 0);
     writeFrame(output, {lang ? "en-printer-raster" : "zh-printer-raster", "screen", "confirm-print", 0, 1000, "zh", "sample_printer_capability_no_io"});
+    hostState.printerDaily=true;
+    confirmReceipt=planter_presentation::dailyReceipt(hostState,lang!=0,0,[]{return 95U;});
+    for(dailyPreviewPage=0;dailyPreviewPage<receipt_preview::DailyPreviewPages;++dailyPreviewPage)
+      writeFrame(output,{std::string(lang?"en-daily-":"zh-daily-")+std::to_string(dailyPreviewPage),"screen","confirm-daily",0,1000,"zh","sample_no_io"});
     confirmOpen = false;strcpy(hostState.printerStatus, "recovery_required");
     writeFrame(output, {lang ? "en-printer-recovery" : "zh-printer-recovery", "screen", "controls", 0, 1000, "zh", "sample_printer_capability_no_io"});
     hostState = State();host_fixture::resetWifi();

@@ -2,8 +2,27 @@
 #include "planter_client.h"
 #include "device_settings.h"
 #include <cstring>
+#include <cmath>
 
 namespace planter_presentation {
+inline int snapshotValue(const planter::Reading& reading,int scale,int low,int high) {
+  if(!reading.valid || !std::isfinite(reading.value))return -9999;
+  const float value=reading.value*scale;
+  if(value<low || value>high)return -9999;
+  return static_cast<int>(std::lround(value));
+}
+template<class Random>
+inline planter::PrintReceipt dailyReceipt(const planter::State& s,bool english,int species,Random random) {
+  planter::PrintReceipt out;
+  out.isDaily=true;out.requiresRaster=true;
+  out.daily.english=english;out.daily.species=species;
+  out.daily.soil=s.soilCalibrationKnown&&s.soilCalibrated?snapshotValue(s.soilPercent,1,0,100):-9999;
+  out.daily.raw=snapshotValue(s.soilRaw,1,0,4095);
+  out.daily.temperature=snapshotValue(s.temperature,10,-400,850);
+  out.daily.humidity=snapshotValue(s.humidity,1,0,100);
+  robo::drawDailyCard(out.daily,random);
+  return out;
+}
 // The bytes displayed in the confirmation page are copied into the command
 // queue. Neither a language change nor a later capability poll rewrites them.
 inline planter::PrintReceipt receipt(const planter::State &state, bool english) {

@@ -1,4 +1,5 @@
 #include "planter_client.h"
+#include "../../xiao/include/daily_json.h"
 #include "config.h"
 #include "device_settings.h"
 #include "local_soil.h"
@@ -148,7 +149,8 @@ void pollState() {
   next.printerEnabled = next.printerKnown && printer["enabled"].as<bool>();
   if (next.printerKnown) copy(next.printerStatus, printer["status"]);
   next.printerRaster = next.printerKnown && !strcmp(printer["text_format"] | "", "utf8-raster");
-  next.printerLayout32 = next.printerRaster && !strcmp(printer["layout"] | "", "receipt32-v1");
+  next.printerDaily = next.printerRaster && !strcmp(printer["daily_layout"] | "", "garden-daily-v2");
+  next.printerLayout32 = next.printerRaster && !strcmp(printer["layout"] | "", "receipt32-v2");
   next.printerAutocut = next.printerKnown && printer["autocut"].is<bool>() && printer["autocut"].as<bool>();
 
   xSemaphoreTake(lock, portMAX_DELAY);
@@ -249,10 +251,11 @@ void sendCommand(const Command &command) {
   }
   if (command.action == Action::Print && (!strcmp(state.printerStatus, "recovery_required") ||
       (command.receipt.requiresRaster && !state.printerRaster) ||
-      (command.receipt.layout32 && !state.printerLayout32))) {
+      (command.receipt.layout32 && !state.printerLayout32) ||
+      (command.receipt.isDaily && !state.printerDaily))) {
     commandResult(command.id, "not_sent", "Printer needs recovery or a new preview", false); return;
   }
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<1024> doc;
   doc["request_id"] = command.id;
   switch (command.action) {
     case Action::Water:
@@ -262,8 +265,8 @@ void sendCommand(const Command &command) {
     case Action::StopWater: doc["action"] = "stop_water"; break;
     case Action::Light: doc["action"] = "light"; doc["on"] = command.on; break;
     case Action::Print:
-      doc["action"] = "print";
-      doc["text"] = command.receipt.text;
+      if(command.receipt.isDaily){doc["action"]="print_daily";robo::writeDaily(doc.createNestedObject("daily"),command.receipt.daily);}
+      else {doc["action"] = "print";doc["text"] = command.receipt.text;}
       break;
   }
   String body;
@@ -394,7 +397,7 @@ bool fresh(const State &state, uint32_t now) {
 }
 bool submit(Action action, bool lightOn, const PrintReceipt *receipt) {
   if (!lock || !commands || !stops) return false;
-  if (action == Action::Print && (!receipt || !receipt->text[0] || !memchr(receipt->text, 0, sizeof(receipt->text)))) return false;
+  if (action == Action::Print && (!receipt || (receipt->isDaily ? !robo::validDaily(receipt->daily) : (!receipt->text[0] || !memchr(receipt->text, 0, sizeof(receipt->text)))))) return false;
   xSemaphoreTake(lock, portMAX_DELAY);
   const bool stop = action == Action::StopWater;
   const bool enabled = (action == Action::Water || stop) ? shared.pumpEnabled :
@@ -403,7 +406,8 @@ bool submit(Action action, bool lightOn, const PrintReceipt *receipt) {
       !device_settings::planterNetworkReady() || (!stop && (!fresh(shared, millis()) || shared.commandBlocked)) ||
       (action == Action::Print && (!strcmp(shared.printerStatus, "recovery_required") ||
        (receipt->requiresRaster && !shared.printerRaster) ||
-       (receipt->layout32 && !shared.printerLayout32)))) {
+       (receipt->layout32 && !shared.printerLayout32) ||
+       (receipt->isDaily && (!shared.printerDaily || !robo::validDaily(receipt->daily)))))) {
     xSemaphoreGive(lock); return false;
   }
   Command command{action, lightOn, {}, device_settings::networkRevision(), {}};

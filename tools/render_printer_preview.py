@@ -16,7 +16,7 @@ def decode_receipt(data: bytes) -> Image.Image:
             raise ValueError("Truncated raster header")
         width = int.from_bytes(data[offset + 4:offset + 6], "little")
         rows = int.from_bytes(data[offset + 6:offset + 8], "little")
-        if width != 48 or not 1 <= rows <= 32:
+        if width != 48 or not rows in (32,128):
             raise ValueError("Unexpected firmware band dimensions")
         offset += 8
         size = width * rows
@@ -25,7 +25,7 @@ def decode_receipt(data: bytes) -> Image.Image:
         packed.extend(data[offset:offset + size])
         height += rows
         offset += size
-    if not 1 <= height <= 396:
+    if not 1 <= height <= 1536:
         raise ValueError("Unexpected receipt height")
     if data[offset:] not in (b"\x1bd\x06", b"\x1bd\x06\x1dV\0"):
         raise ValueError("Unexpected feed/cut tail")
