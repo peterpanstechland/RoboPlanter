@@ -92,6 +92,9 @@ uint32_t pairPin=0;
 uint32_t pairConnections=0,pairRequests=0,pairNotifications=0;
 int pairAuthMode=-1,pairFailure=-1;
 bool pairStackSuccess=false;
+const char* pairStage="idle";
+int pairDisconnectReason=-1,pairEncryptionError=0;
+uint32_t pairStarted=0;
 uint8_t currentPeer[6]={};
 robo::BlePreparedWrite<MaxBleBytes> blePreparedWrite;
 String deviceId;
@@ -516,6 +519,11 @@ void stateJson(JsonDocument& document) {
     yoyo["auth_mode"]=pairAuthMode;
     yoyo["failure_reason"]=pairFailure;
     yoyo["stack_success"]=pairStackSuccess;
+    yoyo["stage"]=pairStage;
+    yoyo["link_connected"]=bondAccess.connected();
+    yoyo["window_remaining_ms"]=bondAccess.remaining(now);
+    yoyo["disconnect_reason"]=pairDisconnectReason;
+    yoyo["encryption_error"]=pairEncryptionError;
     yoyo["paired"]=bondAccess.paired();
     yoyo["connected"]=bondAccess.authorized();
     yoyo["pairing"]=bondAccess.enrolling(now);
@@ -691,11 +699,16 @@ void httpCommand() {
     bool opened=false;
     {
       Lock guard(bleMutex);
-      if(ROBO_ENABLE_BONDED_YOYO && companionStorage && bondAccess.open(millis())) {
+      if(ROBO_ENABLE_BONDED_YOYO && companionStorage && bondAccess.enrolling(millis())) {
+        // A repeated request must not rotate the PIN during phone input.
+        opened=true;
+      } else if(ROBO_ENABLE_BONDED_YOYO && companionStorage && bondAccess.open(millis())) {
         pairPin=100000+esp_random()%900000;
         bondSecurity.setStaticPIN(pairPin);
         bondSecurity.setCapability(ESP_IO_CAP_OUT);
         bondSecurity.setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+        pairStage="ready";
+        pairAuthMode=pairFailure=-1;pairStackSuccess=false;
         opened=true;
       }
     }
@@ -937,7 +950,11 @@ void bleGattEvent(esp_gatts_cb_event_t event, esp_gatt_if_t gattsIf, esp_ble_gat
 
 class PairCallbacks : public BLESecurityCallbacks {
   uint32_t onPassKeyRequest() override {return 0;} // Display-only; no Just Works.
-  void onPassKeyNotify(uint32_t pin) override {Lock guard(bleMutex);++pairNotifications;if(bondAccess.enrolling(millis()))pairPin=pin;}
+  void onPassKeyNotify(uint32_t pin) override {
+    Lock guard(bleMutex);++pairNotifications;
+    if(bondAccess.enrolling(millis())) {pairPin=pin;pairStage="waiting_for_pin";}
+    Serial.printf("YOYO passkey requested; window=%d\n",bondAccess.enrolling(millis()));
+  }
   bool onConfirmPIN(uint32_t) override {return false;}
   bool onSecurityRequest() override {Lock guard(bleMutex);++pairRequests;return companionStorage && bondAccess.mayPair(millis());}
   void onAuthenticationComplete(esp_ble_auth_cmpl_t result) override {
@@ -951,6 +968,11 @@ class PairCallbacks : public BLESecurityCallbacks {
       if(accepted && !wasPaired && companionPrefs.putBytes("phone",bondAccess.owner(),6)!=6) {
         bondAccess=robo::BondedAccess{};accepted=false;
       }
+      // ESP-IDF 4.4.7: HCI_ERR_MAX_ERR(0x43)+10+SMP_RSP_TIMEOUT(0x16).
+      pairStage=accepted?"authenticated":!result.success?(result.fail_reason==0x63?"pairing_timeout":"authentication_failed"):
+        !strong?"security_mode_rejected":"enrollment_rejected";
+      Serial.printf("YOYO auth success=%d mode=%u reason=%u accepted=%d elapsed_ms=%lu\n",
+        result.success,result.auth_mode,result.fail_reason,accepted,static_cast<unsigned long>(millis()-pairStarted));
     }
     Serial.printf("YOYO encrypted connection: %s\n",accepted?"authenticated":"rejected");
     if(!accepted)esp_ble_gap_disconnect(result.bd_addr);
@@ -962,20 +984,32 @@ class ServerCallbacks : public BLEServerCallbacks {
     bool accepted;
     {
       Lock guard(bleMutex);
-      accepted = bleSession.connect(param->connect.conn_id);
+      ++pairConnections;
+      const bool allowed=!ROBO_ENABLE_BONDED_YOYO || (companionStorage && bondAccess.allowsConnection(millis()));
+      accepted = allowed && bleSession.connect(param->connect.conn_id);
       if (accepted) {
-        ++pairConnections;
+        pairStage="authenticating";pairStarted=millis();
+        pairAuthMode=pairFailure=-1;pairStackSuccess=false;pairEncryptionError=0;
         memcpy(currentPeer,param->connect.remote_bda,6);
         bondAccess.connect(currentPeer);
         xQueueReset(bleQueue);
         blePreparedWrite.reset();
+      } else if(!bondAccess.connected()) {
+        pairStage=!companionStorage?"storage_unavailable":"window_closed";
       }
     }
     if (accepted) {
       BLEDevice::stopAdvertising();
-      if(ROBO_ENABLE_BONDED_YOYO)esp_ble_set_encryption(param->connect.remote_bda,ESP_BLE_SEC_ENCRYPT_MITM);
+      if(ROBO_ENABLE_BONDED_YOYO) {
+        const auto error=esp_ble_set_encryption(param->connect.remote_bda,ESP_BLE_SEC_ENCRYPT_MITM);
+        {Lock guard(bleMutex);pairEncryptionError=error;if(error!=ESP_OK)pairStage="encryption_start_failed";}
+        if(error!=ESP_OK)server->disconnect(param->connect.conn_id);
+      }
     }
-    else server->disconnect(param->connect.conn_id);
+    else {
+      Serial.println("YOYO connection not admitted; enrollment closed, storage unavailable or link occupied");
+      server->disconnect(param->connect.conn_id);
+    }
   }
   void onDisconnect(BLEServer*, esp_ble_gatts_cb_param_t* param) override {
     bool ownerLeft;
@@ -983,13 +1017,20 @@ class ServerCallbacks : public BLEServerCallbacks {
       Lock guard(bleMutex);
       ownerLeft = bleSession.disconnect(param->disconnect.conn_id);
       if (ownerLeft) {
+        pairDisconnectReason=param->disconnect.reason;
+        if(bondAccess.authorized())pairStage="paired_idle";
+        else if(!strcmp(pairStage,"authenticating") || !strcmp(pairStage,"waiting_for_pin"))pairStage="link_lost";
         bondAccess.disconnect();
         blePreparedWrite.reset();
         bleCharacteristic->setValue("RoboPlanter/1");
         xQueueReset(bleQueue);
       }
     }
-    if (ownerLeft) BLEDevice::startAdvertising();
+    // A refused (unadmitted) connection also stops connectable advertising.
+    // Restart after its disconnect, unless an admitted phone still owns it.
+    bool advertise;
+    {Lock guard(bleMutex);advertise=!bondAccess.connected();}
+    if (advertise) BLEDevice::startAdvertising();
   }
 };
 

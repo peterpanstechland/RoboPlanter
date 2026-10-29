@@ -269,12 +269,15 @@ void drawYoyo(const ui_theme::Theme &t,uint32_t now) {
   text(24,90,state.yoyoConnected?tr("手机已安全连接","Phone securely connected"):
     state.yoyoPaired?tr("已配对，等待手机连接","Paired. Waiting for phone"):
     tr("首次连接需要手机配对","Pair your phone on first use"),t.ink,24);
-  text(24,130,tr("在手机蓝牙设置里选择花盆","Select the planter in phone Bluetooth"),t.muted,16);
-  button(kPairPhone,state.yoyoPairing?tr("配对窗口已开启","Pairing window open"):state.yoyoPaired?tr("手机已配对","Phone paired"):tr("开启两分钟配对","Pair for two minutes"),t,false,
+  text(24,130,state.yoyoPaired?tr("回到 YOYO 即可读取工位状态","Return to YOYO to read desk status"):
+    state.yoyoPairing?tr("在手机输入下方六位码","Enter the six digits below on your phone"):
+    tr("先点下方按钮，再连接手机蓝牙","Tap below, then connect in phone Bluetooth"),t.muted,16);
+  button(kPairPhone,state.yoyoPairing?tr("配对窗口已开启","Pairing window open"):state.yoyoPaired?tr("手机已配对","Phone paired"):tr("显示六位配对码","Show pairing code"),t,false,
     ready && state.yoyoEnabled && !state.yoyoPaired && !state.yoyoPairing,24);
   if(state.yoyoPairing && state.yoyoPin>=100000 && state.yoyoPin<=999999) {
-    char pin[24];snprintf(pin,sizeof(pin),"PIN  %06lu",static_cast<unsigned long>(state.yoyoPin));text(80,249,pin,t.accent,32);
-  } else text(24,253,tr("配对码只在此屏显示","Pairing code appears on this screen"),t.muted,16);
+    char pin[24];snprintf(pin,sizeof(pin),"PIN  %06lu",static_cast<unsigned long>(state.yoyoPin));text(80,240,pin,t.accent,48);
+  } else text(24,253,state.yoyoPaired?tr("下次连接无需重新输入配对码","No new code needed for later connections"):
+    tr("六位码在此显示，两分钟有效","Six digits appear here, valid for two minutes"),t.muted,16);
   button(kAutoPrint,state.autoPrint?tr("场景自动打印：开","Scene auto-print: ON"):tr("场景自动打印：关","Scene auto-print: OFF"),t,state.autoPrint,ready&&state.autoPrintKnown,24);
   text(24,392,tr("同一场景五分钟内仅打印一次","Same scene: at most once per five minutes"),t.muted,16);
   text(24,423,tr("关闭后仍可主动要求打印","Explicit print requests still work when off"),t.muted,16);

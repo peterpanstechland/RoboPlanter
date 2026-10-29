@@ -22,13 +22,18 @@ int main() {
   scene.requestId="manual";scene.on=false;assert(c.submit(scene,500002).ok);c.finishPrint(scene.requestId,true);
   scene.requestId="invalid-note";scene.text="bad|field";assert(!c.submit(scene,500003).ok);
   robo::BondedAccess gate;uint8_t a[6]={1,2,3,4,5,6},b[6]={6,5,4,3,2,1};
+  assert(!gate.allowsConnection(0)); // No pointless PIN prompt outside enrollment.
   gate.connect(a);assert(!gate.authenticate(a,true,1));assert(!gate.open(1));gate.disconnect();
-  assert(gate.open(0xfffffff0));assert(gate.enrolling(16));gate.connect(a);
+  assert(gate.open(0xfffffff0));assert(gate.enrolling(16));assert(gate.remaining(16)==119968);
+  assert(gate.allowsConnection(16));gate.connect(a);assert(!gate.allowsConnection(16));
   assert(!gate.authenticate(b,true,16));assert(!gate.authenticate(a,false,16));assert(gate.authenticate(a,true,16));
   assert(gate.paired()&&gate.authorized());gate.disconnect();assert(!gate.authorized());
+  assert(gate.allowsConnection(20)); // An admitted link is not an authenticated phone.
   gate.connect(b);assert(!gate.mayPair(20));assert(!gate.authenticate(b,true,20));gate.disconnect();
   gate.connect(a);assert(gate.mayPair(21));assert(gate.authenticate(a,true,21));
   robo::BondedAccess expired;assert(expired.open(1));expired.connect(a);assert(!expired.authenticate(a,true,120001));
+  expired.disconnect();assert(!expired.allowsConnection(120001));assert(expired.remaining(120001)==0);
+  assert(expired.open(120002));assert(expired.allowsConnection(120002));
   robo::BondedAccess restored;restored.restore(a);restored.connect(a);assert(restored.authenticate(a,true,0));
   std::cout<<"Companion timer, duplicate/automatic receipts, secure enrollment: passed\n";
 }

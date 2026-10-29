@@ -11,6 +11,13 @@ class BondedAccess {
   void restore(const uint8_t* address) {std::memcpy(owner_.data(),address,6);paired_=true;}
   bool open(uint32_t now) {if(paired_ || connected_)return false;opened_=now;window_=true;return true;}
   bool enrolling(uint32_t now) const {return window_ && uint32_t(now-opened_)<120000;}
+  uint32_t remaining(uint32_t now) const {return enrolling(now)?120000-uint32_t(now-opened_):0;}
+  bool allowsConnection(uint32_t now) const {
+    // Link admission does not grant access. Reconnects must still prove their
+    // identity through the encrypted authentication callback below.
+    return !connected_ && (paired_ || enrolling(now));
+  }
+  bool connected() const {return connected_;}
   void connect(const uint8_t* address) {std::memcpy(peer_.data(),address,6);connected_=true;authenticated_=false;}
   void disconnect() {connected_=authenticated_=false;}
   bool mayPair(uint32_t now) const {return connected_ && (enrolling(now) || (paired_ && peer_==owner_));}

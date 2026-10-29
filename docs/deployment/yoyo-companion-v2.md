@@ -10,7 +10,8 @@
 - 自动打印默认为开；语音或屏幕均可设置，持久保存。自动场景每类五分钟内最多一次；显式手动打印不受自动开关影响。2026-10-29最后读取开关为开。
 - SEN54 温湿度、PM2.5、VOC和距离持续有效；土壤仍是未校准ADC。水箱未标定，实际泵未接，泵关闭。
 - 荣耀平台三个技能文件已更新，入口示例为“读取工位状态”“早上好，上班打卡”。平台之后显示“已上架 / 私有发布”，上架时间07:50:35。未把平台发布状态当成手机验收成功，也未取得明确的安全检测结论。
-- 手机曾报“读取技能文件异常”。用户也报告已连接，但主控最新诊断仍为connect_count=0、paired=false。因此**手机实际BLE控制、跨断开重连、长中文写入、系统提醒尚未验收**。
+- 手机首次安全配对和 Skill 实时读取已经验收：2026-10-29用户确认输入 Indicator 上的六位码后配对成功；主控记录 connect_count=5、auth_mode=13（SC+MITM+bonding）、failure_reason=0、stack_success=true、paired=true、connected=true。用户随后在“RoboPlanter工位盆栽伙伴”说“读取工位状态”，确认返回土壤、温度和湿度。该验收基于下方记录的已部署固件，不是尚未刷入的提示改进版。
+- **手机执行开关灯/打印/番茄钟、跨断开或重启重连、长中文写入、系统提醒仍待验收**。不能把一次实时读取当成全部控制通过。
 - 电脑只读扫描确认 RoboPlanter-A994 广播及服务UUID存在；没有用电脑冒充手机完成绑定。
 
 ## 关于新引入的配对码
@@ -19,7 +20,19 @@
 
 `ROBO_ENABLE_BONDED_YOYO` 默认0，本机联调配置为1。开启后仅接受公开的 V 协议入口，且每次连接必须通过 SC+MITM+bonding，并匹配设备登记的手机。首次登记窗口由已认证的本地 HTTP/Indicator 开启，有效120秒；PIN只在该窗口的已认证状态接口和屏幕出现，不进入Skill。登记地址与自动打印偏好保存在 rp-companion NVS。
 
-用户对新增配对码提出异议，已停止反复要求配对。该接入体验和真实手机兼容性仍待确认，不能称为“无感接入已完成”。不应为绕过问题而开放无鉴权的水泵、打印或灯光控制；平台APIKey字段也不等于已验证的安全注入方案。
+本次“连不上”的直接反馈是手机已弹出输入框，但用户不知道从哪里查看配对码。六位码在 Indicator 的“设置 → 花盆连接 → YOYO 与场景小票”中，点击“开启两分钟配对”后显示；它不是手机锁屏密码，也不在聊天或 Skill 中。用户找到并输入该码后，主控认证与 Skill 读取均成功。之前失败码99（0x63）在本项目 ESP-IDF 4.4.7 中是配对应答超时：由[BTA错误码转换](https://github.com/espressif/esp-idf/blob/v4.4.7/components/bt/host/bluedroid/bta/include/bta/bta_api.h)、[HCI基础值](https://github.com/espressif/esp-idf/blob/v4.4.7/components/bt/host/bluedroid/stack/include/stack/hcidefs.h)和[SMP_RSP_TIMEOUT](https://github.com/espressif/esp-idf/blob/v4.4.7/components/bt/host/bluedroid/stack/include/stack/smp_api.h)对应得到。
+
+### 已编译、未刷入的配对体验修订
+
+为了保留刚验收成功的手机连接，本次后续改动仅编译和测试，未再次刷写两块开发板：
+
+- Indicator按钮改为“显示六位配对码”，开启后明确提示“在手机输入下方六位码”，PIN放大为48px；成功后提示返回YOYO。当前设备仍显示旧按钮文字。
+- 未绑定且两分钟窗口关闭时，在发起加密配对前拒绝连接，避免在已经不可能登记的状态下继续索要PIN。拒绝连接断开后恢复广播。
+- 有效窗口内重复开启不更换PIN或延长窗口，避免输入中变码；已绑定手机仍须通过原有加密和身份验证。
+- 已认证HTTP状态增加stage、link_connected、window_remaining_ms、disconnect_reason、encryption_error；日志不输出PIN、密钥或手机地址。
+- 核心测试覆盖窗口关闭/到期、时间溢出、拒绝第二条连接、已登记手机仍须认证；两板编译和590帧界面渲染通过。
+
+首次绑定是当前实现的设计选择；重连体验尚待单独实测。不应为绕过问题而开放无鉴权的水泵、打印或灯光控制。
 
 ## 本次新增接口
 
