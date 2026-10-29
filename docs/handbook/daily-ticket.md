@@ -23,9 +23,13 @@
 
 - `daily_ticket.h`：牌库、提示、均匀抽牌、固定快照及范围校验。
 - `daily_receipt.h`：纸面模块、原创 Logo 与卡面符号、128 行编码。
-- `daily_json.h`：严格的八字段 HTTP 快照格式；协议见 [设备协议](../device-protocol.md)。
+- `daily_json.h`：严格的基础八字段HTTP快照格式，支持成对的可选scene/note字段；协议见 [设备协议](../device-protocol.md)。
 - `receipt_preview.h`：复用同一像素源的分页预览。
 - 运行 `tools/test-core.ps1` 与 `tools/test-device-settings.ps1`，检查牌库、字段校验、快照锁定、幂等、传输失败和预览像素一致性。
 - 离线渲染：核心测试生成 `build/tests/daily_ticket_test.exe` 后，执行 `build/tests/daily_ticket_test.exe tmp/daily-ticket`；再执行 `python tools/render_printer_preview.py tmp/daily-ticket.bin tmp/daily-ticket.png`。样例是固定模拟快照，不访问设备。
 
 打印前预览、一次确认和不自动重印保持不变。`completed` 仅表示串口已发完，实际出纸、缺纸与刀具状态仍需人工确认。云端动作权限没有随日签功能开放。
+
+## YOYO场景触发
+
+0.4.0新增checkin/lunch/meetings/rest/lowbattery五种日签，可按打卡、午饭、会议、休息、低电量话术触发，自动开关持久保存，同场景五分钟冷却。当前设备端会议日签已实印通过，手机自动触发仍待验收。语音生成不等于事先屏幕预览，超时不能重印；见[YOYO日常交互](yoyo-companion.md)。

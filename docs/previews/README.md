@@ -24,7 +24,7 @@
 
 ## 接线与早期交互原型
 
-下载仓库后，用浏览器打开以下独立 HTML。GitHub 文件页展示源码，不直接运行界面；当前未启用 GitHub Pages 或其他公开托管。
+最新接线以2026-10-29版本为准：[在线三维接线教学](https://peterpanstechland.github.io/roboplanter/#wiring-lab)。下载仓库后也可用浏览器打开下面的独立HTML；它不控制真实设备。上方屏幕预览属于各次历史渲染，最新功能状态见项目手册。
 
 - [接线与通信示意图](roboplanter-wiring.html)：查看 XIAO、Indicator、传感器与供电连接。
 - [旧版 Indicator 桌边伙伴](indicator-companion.html)：早期五页导航与番茄钟交互原型，其主题与画面已被新版像素界面替代。

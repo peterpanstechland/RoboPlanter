@@ -89,6 +89,8 @@ python tools/device_cli.py print 'Hello planter'
 
 ## BLE
 
+当前YOYO 0.4.0开启ROBO_ENABLE_BONDED_YOYO后，使用加密配对的V协议，不携带HTTP令牌。完整新查询、共享计时、场景打印及结果解释见[BLE v2教程](handbook/ble-integration.md)。以下token与单次读取格式是未启用绑定模式时的历史调试接口，不是当前Skill回退方案。
+
 保留附件的服务 UUID `a2f39c10-7e4b-4d21-8a61-0f3bc9d15001`，特征 UUID `a2f39c11-7e4b-4d21-8a61-0f3bc9d15001`。具体短文本格式、长度和回包规则见 [XIAO 固件说明](../firmware/xiao/README.md#ble-protocol-version-1)。BLE 写确认与设备业务回包分开处理；YOYO 查询需启用等待响应。
 
 带最短 16 字符令牌的 UV 查询已为 21 字节，超过默认 ATT MTU 23 下的 20 字节载荷。固件的长写处理与连接归属校验已编译和通过核心测试；荣耀工具是否协商足够 MTU、支持完整长写并返回完整业务响应，仍须手机真机验证。短请求的单次查询成功也不能证明长写兼容或构成浇水授权。
