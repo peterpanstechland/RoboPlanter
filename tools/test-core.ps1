@@ -29,6 +29,10 @@ if errorlevel 1 exit /b 1
 cl.exe /nologo /std:c++17 /EHsc /utf-8 /W4 "$rpRoot\tests\core\sen54_tank_test.cpp" /Fe:sen54_tank_test.exe
 if errorlevel 1 exit /b 1
 sen54_tank_test.exe
+if errorlevel 1 exit /b 1
+cl.exe /nologo /std:c++17 /EHsc /utf-8 /W4 "$rpRoot\tests\core\companion_test.cpp" /Fe:companion_test.exe
+if errorlevel 1 exit /b 1
+companion_test.exe
 "@
 Set-Content -LiteralPath $rpBatch -Value $rpBatchContent -Encoding ascii
 & $env:ComSpec /d /c $rpBatch

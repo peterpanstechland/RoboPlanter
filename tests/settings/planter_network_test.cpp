@@ -6,7 +6,7 @@
 #include "../../firmware/indicator/src/planter_client.cpp"
 #include "planter_presentation.h"
 // This network harness does not run the RP2040 sampler or invent soil data.
-namespace local_soil { Sample snapshot() { return Sample(); } }
+namespace local_soil { Sample snapshot() { return Sample(); } bool notifyFocusComplete(){return true;} }
 unsigned checks = 0;
 #define CHECK(condition) do { ++checks; if (!(condition)) throw std::runtime_error("check failed at line " + std::to_string(__LINE__)); } while (0)
 void workerOnce() {
@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
     else if (scenario == "commands-queue") settingsTestFailQueueOn = 2;
     else if (scenario == "stops-queue") settingsTestFailQueueOn = 3;
     else if (scenario == "task") settingsTestTaskFail = true;
-    if (scenario != "stop-switch" && scenario != "print" && scenario != "sensors") {
+    if (scenario != "stop-switch" && scenario != "print" && scenario != "sensors" && scenario != "companion") {
       CHECK(!planter::begin()); CHECK(settingsTestTask == nullptr);
       CHECK(!device_settings::wifiState().ready); CHECK(!device_settings::planterNetworkReady());
       CHECK(!device_settings::requestScan()); CHECK(!device_settings::requestConnect("office", "test-password"));
@@ -40,6 +40,28 @@ int main(int argc, char **argv) {
       const bool settingsFailed = scenario == "settings-mutex" || scenario == "settings-queue";
       CHECK(settingsTestLiveMutexes == (settingsFailed ? 0U : 1U));
       CHECK(settingsTestLiveQueues == (settingsFailed ? 0U : 1U));
+    } else if(scenario=="companion") {
+      CHECK(planter::begin());
+      const String valid=R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"uptime_ms":1000,"auto_print":true,"yoyo":{"enabled":true,"paired":false,"pairing":true,"pin":123456},"focus":{"enabled":true,"phase":1,"revision":8,"duration_ms":60000,"remaining_ms":58000}})";
+      settingsTestStateBody=valid;connectConfiguredNetwork();
+      auto state=planter::snapshot();CHECK(state.focusKnown && state.focusRemaining==58000 && state.focusRevision==8);
+      CHECK(state.yoyoEnabled && state.yoyoPairing && state.yoyoPin==123456 && state.autoPrint);
+      CHECK(!planter::submit(planter::Action::FocusStart,false,nullptr,0));
+      CHECK(!planter::submit(planter::Action::FocusStart,false,nullptr,121));
+      settingsTestPostHook=[&](const String& body) {
+        StaticJsonDocument<512> doc;CHECK(!deserializeJson(doc,body));
+        CHECK(!strcmp(doc["action"]|"","focus_start"));CHECK(doc["duration_ms"].as<int>()==60000);
+        settingsTestPostBody="{\"ok\":true,\"request_id\":\""+String(doc["request_id"]|"")+"\",\"status\":\"completed\"}";
+      };
+      CHECK(planter::submit(planter::Action::FocusStart,false,nullptr,1));workerOnce();CHECK(settingsTestPosts.size()==1);
+      settingsTestStateBody=R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"focus":{"enabled":true,"phase":1,"revision":8,"duration_ms":60000,"remaining_ms":60001}})";
+      pollState();CHECK(!planter::snapshot().focusKnown);CHECK(!planter::submit(planter::Action::FocusPause));
+      settingsTestStateBody=valid;pollState();CHECK(planter::submit(planter::Action::FocusPause));
+      settingsTestNow+=kStaleMs+1;workerOnce();CHECK(settingsTestPosts.size()==1);
+      CHECK(!strcmp(planter::snapshot().commandStatus,"not_sent"));
+      robo::DailyTicket ticket;StaticJsonDocument<512> json;
+      CHECK(!deserializeJson(json,R"({"card":0,"reversed":0,"english":0,"species":0,"soil":-9999,"raw":-9999,"temperature":-9999,"humidity":-9999,"scene":1,"note":"a\u0000b"})"));
+      CHECK(!robo::readDaily(json.as<JsonVariantConst>(),ticket));
     } else if (scenario == "sensors") {
       CHECK(planter::begin());
       settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"ambient_light":{"enabled":true,"raw":0,"valid":true},"uv":{"raw":987,"valid":true}})";

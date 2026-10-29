@@ -7,6 +7,7 @@
 #include "printer_text.h"
 #include "daily_ticket.h"
 #include "water_tank.h"
+#include "focus_session.h"
 
 namespace robo {
 
@@ -117,7 +118,10 @@ class Controller {
     result.ok = true;
     result.requestId = command.requestId;
     result.status = "completed";
-    if (command.action == "water") {
+    if (focusAction(command.action)) {
+      if(!focus_.apply(command.action,static_cast<uint32_t>(command.durationMs),now))return reject(command,"focus_invalid_state");
+    } else if(command.action=="auto_print") { autoPrint_=command.on;
+    } else if (command.action == "water") {
       const char* waterError = waterBlockReason(now);
       if (*waterError) return reject(command, waterError);
       if (pumpOn_) return reject(command, "pump_busy");
@@ -132,10 +136,16 @@ class Controller {
     } else if (command.action == "light") {
       lightOn_ = command.on;
       lightEffect_ = command.on && command.hasEffect ? command.effect : "solid";
-    } else if ((command.action == "print" || command.action == "print_daily" || command.action == "print_calibration")) {
+    } else if ((command.action == "print" || command.action == "print_scene" || command.action == "print_daily" || command.action == "print_calibration")) {
       if (printerRecoveryRequired_) return reject(command, "printer_recovery_required");
       if (pumpOn_) return reject(command, "pump_busy");
       if (printerBusy_) return reject(command, "printer_busy");
+      if(command.action=="print_scene" && command.on) {
+        if(!autoPrint_)return reject(command,"auto_print_disabled");
+        const int scene=sceneNumber(command.effect);
+        if(scenePrinted_[scene] && uint32_t(now-sceneTime_[scene])<300000)return reject(command,"scene_cooldown");
+        scenePrinted_[scene]=true;sceneTime_[scene]=now;
+      }
       printerBusy_ = true;
       printerStatus_ = "queued";
       result.status = "accepted";
@@ -146,6 +156,7 @@ class Controller {
   }
 
   void tick(uint32_t now) {
+    focus_.tick(now);
     if (pumpOn_ && *waterBlockReason(now)) {
       pumpOn_ = false;
       finish(pumpRequestId_, false, waterBlockReason(now));
@@ -156,6 +167,10 @@ class Controller {
   }
 
   void updateTank(int distanceMm, uint32_t now) { tank_.update(distanceMm, now); tick(now); }
+  void failPreference(const std::string& id,bool previous) {autoPrint_=previous;finish(id,false,"settings_save_failed");}
+  bool autoPrint() const {return autoPrint_;}
+  void restoreAutoPrint(bool value) {autoPrint_=value;}
+  const FocusSession& focus() const {return focus_;}
   const char* waterBlockReason(uint32_t now) const {
     return config_.tankRequired ? tank_.error(now) : "";
   }
@@ -196,6 +211,10 @@ class Controller {
   struct Entry { Command command; Result result; };
   Config config_;
   TankGuard tank_;
+  FocusSession focus_;
+  bool autoPrint_=true;
+  bool scenePrinted_[6]={};
+  uint32_t sceneTime_[6]={};
   std::array<Entry, CacheCapacity> entries_{};
   size_t used_ = 0;
   bool pumpOn_ = false;
@@ -220,7 +239,7 @@ class Controller {
 
   std::string validate(const Command& c) const {
     if (c.action != "water" && c.action != "stop_water" &&
-        c.action != "light" && c.action != "print" && c.action != "print_daily" && c.action != "print_calibration") return "unknown_action";
+        c.action != "light" && c.action != "print" && c.action != "print_scene" && c.action != "print_daily" && c.action != "print_calibration" && c.action != "auto_print" && !focusAction(c.action)) return "unknown_action";
     if (c.hasDaily && c.action != "print_daily") return "unexpected_fields";
     if (c.action == "print_daily" && (!c.hasDaily || !validDaily(c.daily))) return "invalid_daily_ticket";
     if (c.action == "stop_water") {
@@ -229,6 +248,12 @@ class Controller {
     }
     if (!config_.actionsEnabled || !config_.credentialsConfigured)
       return "actions_disabled";
+    if(c.action=="auto_print")return c.hasOn && !c.hasDuration && !c.hasText && !c.hasEffect ? "" : "unexpected_fields";
+    if(focusAction(c.action)) {
+      if(c.hasOn || c.hasText || c.hasEffect || c.hasDaily)return "unexpected_fields";
+      if(c.action=="focus_start")return !c.hasDuration || c.durationMs<60000 || c.durationMs>7200000 ? "invalid_duration" : "";
+      return c.hasDuration?"unexpected_fields":"";
+    }
     if (c.action == "water") {
       if (!config_.pumpEnabled) return "pump_disabled";
       if (!c.hasDuration || c.hasOn || c.hasText || c.hasEffect) return "invalid_water_fields";
@@ -242,6 +267,9 @@ class Controller {
         LightEffect effect;
         if (!c.on || !parseLightEffect(c.effect, effect)) return "invalid_light_fields";
       }
+    } else if (c.action == "print_scene") {
+      if(!config_.printerEnabled)return "printer_disabled";
+      if(c.hasDuration || !c.hasOn || !c.hasText || !c.hasEffect || sceneNumber(c.effect)<1 || !validSceneNote(c.text))return "invalid_scene";
     } else if (c.action == "print_calibration") {
       if (!config_.printerEnabled) return "printer_disabled";
       if (c.hasText || c.hasDuration || c.hasOn || c.hasEffect) return "unexpected_fields";

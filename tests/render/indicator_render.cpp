@@ -45,6 +45,7 @@ bool available() { return true; }
 namespace local_soil {
 bool begin() { return true; }
 Sample snapshot() { return Sample(); }
+bool notifyFocusComplete() { return true; }
 }
 
 namespace {
@@ -102,7 +103,7 @@ bool fresh(const State &state, uint32_t now) {
   return state.received && state.wifi && state.ageKnown && state.networkFailure == NetworkFailure::None &&
       static_cast<uint64_t>(now - state.receivedMs) + state.sampleAgeMs <= kStaleMs;
 }
-bool submit(Action action, bool, const PrintReceipt *receipt) {
+bool submit(Action action, bool, const PrintReceipt *receipt, uint16_t) {
   if (!interactionChecks) throw std::runtime_error("Rendering must never submit a hardware action");
   submitted.push_back(action);
   if (receipt) submittedReceipts.push_back(receipt->text);
@@ -468,6 +469,13 @@ void captureSettings(const std::filesystem::path &output, const std::string &lan
   settings_ui::open();
   tapRect({16, 394, 216, 54}, hostState, 1250);
   writeFrame(output, {prefix + "planter", "screen", "settings-planter", 0, 1300});
+  tapRect({24,332,432,60},hostState,1320);
+  hostState.yoyoEnabled=true;hostState.yoyoPairing=true;hostState.yoyoPin=123456;
+  hostState.autoPrintKnown=hostState.autoPrint=true;
+  writeFrame(output,{prefix+"yoyo-pairing","screen","settings-yoyo",0,1330});
+  hostState.yoyoPairing=false;hostState.yoyoPaired=hostState.yoyoConnected=true;
+  writeFrame(output,{prefix+"yoyo-paired","screen","settings-yoyo",0,1340});
+  hostState=State();
   settings_ui::open();
   tapRect({248, 394, 216, 54}, hostState, 1300);
   writeFrame(output, {prefix + "about", "screen", "settings-about", 0, 1400});

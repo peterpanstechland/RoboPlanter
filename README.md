@@ -18,7 +18,7 @@
 
 基于用户提供的 **Seeed XIAO ESP32-S3 Plus + XIAO Robot Board** 套件，配合 **SenseCAP Indicator D1** 的智能盆栽。**YOYO 独立 Skill 是主要的对话入口**：目标路径为 Skill → 官方 `ble_send_command` → XIAO BLE，再根据设备业务回包反馈真实结果。XIAO 负责传感器与执行器；Indicator 负责同步显示、触摸和本地操作，经 Wi-Fi HTTP 连接 XIAO。两块板分别通过 USB/5V 供电，无需互接 UART/I²C。
 
-独立 Skill 0.2.0已导入并保存荣耀平台草稿，尚未完成真机端到端验证。硬件令牌安全注入和手机工具长写未验证，当前 Skill 不发送硬件命令。已有 MCP/MQTT 保留为辅助接入，不是 Skill 主线的前置条件；A2A 不需要。
+2026-10-29：独立 Skill 0.4.0 增加实时工位查询、灯光、共享番茄钟、五类自动场景日签及系统提醒映射。设备侧计时控制和场景小票已验收；手机曾报技能加载异常，加密蓝牙配对与手机端到端调用仍未通过，不能视为已打通。平台已显示私有上架；详见[本轮联调与配对设计说明](docs/deployment/yoyo-companion-v2.md)。已有 MCP/MQTT 是辅助接入，不是 Skill 前置条件。
 
 这份实现面向压缩包内的 Plus 主控，不是 XIAO ESP32-S3 Sense。原始套件资料保留在本机 `reference/`，不随代码上传；[参考资料说明](reference/README.md) 记录恢复路径。新程序位于 `firmware/`。
 

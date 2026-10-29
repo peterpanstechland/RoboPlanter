@@ -13,14 +13,16 @@ spec.loader.exec_module(honor)
 
 
 class HonorSkillTests(unittest.TestCase):
-    def test_public_package_preserves_nonprivileged_probe(self):
+    def test_public_package_uses_bonded_transport_without_credentials(self):
         with tempfile.TemporaryDirectory() as work:
             output = Path(work) / "skill.zip"
             honor.package(output)
             with zipfile.ZipFile(output) as archive:
                 self.assertEqual(archive.namelist(), list(honor.FILES))
                 root = archive.read("SKILL.md")
-                self.assertIn(b"S|probe|soil", root)
+                self.assertIn(b"V|S|desk", root)
+                self.assertIn(b"requires_local_pairing", root)
+                self.assertNotIn(b"S|probe|soil", root)
                 self.assertNotIn(b"Q|", root)
 
     def test_private_credential_in_any_file_blocks_archive_without_leaking_it(self):

@@ -103,8 +103,10 @@ inline void renderDailyBand(const DailyTicket& d,uint16_t start,uint8_t rows,uin
   std::memset(bits,0,PrinterRowBytes*rows);if(!validDaily(d))return;
   TicketCanvas c{bits,start,rows}; const bool en=d.english;
   ticketLogo(c);
-  c.center(en?"OFFICE OASIS":"工位小花园",172,36);
-  c.center(en?"A little room to grow.":"好好工作，也好好生长。",222,22);
+  const char* titlesZh[]={"工位小花园","上班打卡签","午饭灵感签","会议幸存签","摸鱼许可证","低电量补给签"};
+  const char* titlesEn[]={"OFFICE OASIS","CHECK IN","LUNCH BREAK","MEETING SURVIVOR","REST PERMIT","RECHARGE"};
+  c.center(en?titlesEn[d.scene]:titlesZh[d.scene],172,36);
+  c.center(d.note[0]?d.note:en?"A little room to grow.":"好好工作，也好好生长。",222,22);
   c.divider(270);
   c.text("01",18,289,24);c.text(en?"PLANT CHECK-IN":"植物状态",66,286,32);
   constexpr const char* zh[]={"薄荷","九层塔","蔷薇","多肉"};

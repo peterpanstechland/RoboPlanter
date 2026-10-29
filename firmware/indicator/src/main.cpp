@@ -23,6 +23,7 @@ using planter::State;
 using ui_theme::Icon;
 bool displayReady=false, clientReady=false, controlsOpen=false, prefsReady=false;
 bool confirmOpen=false;
+bool focusSound=false;
 planter::Action confirmAction=planter::Action::Water;
 planter::PrintReceipt confirmReceipt;
 uint8_t dailyPreviewPage=0;
@@ -39,6 +40,7 @@ constexpr planter::Action kActions[]={planter::Action::Water,planter::Action::St
 constexpr Rect kConfirmCancel{24,374,142,52}, kConfirmGo{178,374,278,52};
 constexpr Rect kTimerPresets[]={{24,314,136,44},{172,314,136,44},{320,314,136,44}};
 constexpr Rect kTimerToggle{24,374,278,52}, kTimerReset{316,374,140,52};
+constexpr Rect kFocusSound{328,78,128,30};
 constexpr Rect kPhotoPrevious{24,391,64,44}, kPhotoNext{392,391,64,44};
 const char *tr(const char *zh,const char *en) { return device_settings::getLanguage()==device_settings::Language::English?en:zh; }
 const ui_theme::Theme &theme() { return ui_theme::get(model.theme()); }
@@ -210,8 +212,10 @@ void photosPage(const State &s,uint32_t now) {
   statusStrip(s,now);
 }
 void focusPage(const State &s,uint32_t now) {
+  // Sound is opt-in and persists locally; the phone remains the speech output.
   auto &timer=model.timer();auto &g=indicator::display();
   title(tr("专注时光","Time to focus"),timer.done()?tr("这一段结束啦，伸个懒腰吧","All done. Time for a stretch."):timer.running()?tr("正在专注 · 换时长请先重置","Focusing / reset to change duration"):timer.phase()==ui::TimerPhase::Paused?tr("暂停一下 · 换时长请先重置","Paused / reset to change duration"):tr("专注与休息，都值得认真对待","Make room for both focus and rest."));
+  pill(kFocusSound,focusSound?tr("提示音 开","Sound on"):tr("提示音 关","Sound off"),theme().surface,theme().ink);
   g.fillRoundRect(24,145,432,153,12,theme().card);
   icon(Icon::Clock,43,164,22,theme().cardMuted);
   label(76,166,timer.running()?tr("正在专注","FOCUS IN PROGRESS"):timer.done()?tr("做得很好","WELL DONE"):timer.phase()==ui::TimerPhase::Paused?tr("慢慢来","TAKE YOUR TIME"):tr("一次只做一件事","ONE THING AT A TIME"),theme().cardMuted);
@@ -226,7 +230,8 @@ void focusPage(const State &s,uint32_t now) {
   const char *presets[]={tr("专注 25 分","Focus 25m"),tr("短歇 5 分","Break 5m"),tr("长歇 15 分","Rest 15m")};
   const bool canChange=timer.phase()==ui::TimerPhase::Ready || timer.done();
   for(uint8_t i=0;i<3;++i) {
-    const bool selected=static_cast<uint8_t>(timer.preset())==i;
+    const uint32_t durations[]={1500000U,300000U,900000U};
+    const bool selected=timer.durationMs()==durations[i];
     pill(kTimerPresets[i],presets[i],selected?theme().second:theme().surface,selected?contrastInk(theme().second):canChange?theme().ink:theme().muted);
   }
   pill(kTimerToggle,timer.running()?tr("暂停一下","Pause"):timer.phase()==ui::TimerPhase::Paused?tr("继续计时","Resume"):timer.done()?tr("再来一段","Start again"):tr("开始计时","Start focus"),theme().accent,contrastInk(theme().accent));
@@ -240,6 +245,7 @@ bool enabled(planter::Action action,const State &s,uint32_t now) {
     case planter::Action::StopWater:return clientReady && s.wifi && s.pumpEnabled;
     case planter::Action::Light:return available && s.lightEnabled;
     case planter::Action::Print:return available && s.printerEnabled && strcmp(s.printerStatus,"recovery_required");
+    default:return available && s.focusKnown;
   }return false;
 }
 const char *disabledReason(planter::Action action,const State &s,uint32_t now) {
@@ -383,7 +389,10 @@ void tickCompanion(uint32_t now) {
   const bool running=model.timer().running();
   const auto preset=model.timer().preset();
   model.timer().tick(now);
-  if(running && model.timer().done() && preset==ui::Preset::Focus25)garden_ui::focusCompleted(now);
+  if(running && model.timer().done()) {
+    if(preset==ui::Preset::Focus25)garden_ui::focusCompleted(now);
+    if(focusSound)local_soil::notifyFocusComplete();
+  }
 }
 void handle(ui::Gesture gesture,const State &s,uint32_t now) {
   tickCompanion(now);
@@ -463,7 +472,15 @@ void handle(ui::Gesture gesture,const State &s,uint32_t now) {
         else if(tapped(kPhotoNext))photoIndex=(photoIndex+1)%ui_photos::count();
       }break;
     case ui::Page::Focus:
+      if(tapped(kFocusSound)) {focusSound=!focusSound;if(prefsReady)preferences.putBool("focus-sound",focusSound);return;}
       for(uint8_t i=0;i<3;++i)if(tapped(kTimerPresets[i])) {model.timer().selectPreset(static_cast<ui::Preset>(i));return;}
+      if(s.focusKnown) {
+        if(tapped(kTimerToggle))planter::submit(model.timer().running()?planter::Action::FocusPause:
+          model.timer().phase()==ui::TimerPhase::Paused?planter::Action::FocusResume:planter::Action::FocusStart,
+          false,nullptr,model.timer().durationMs()/60000);
+        else if(tapped(kTimerReset))planter::submit(planter::Action::FocusReset);
+        break;
+      }
       if(tapped(kTimerToggle))model.timer().toggle(now);else if(tapped(kTimerReset))model.timer().reset();break;
   }
 }
@@ -475,6 +492,7 @@ void setup() {
   indicator::setBrightness(device_settings::getBrightness());
   prefsReady=preferences.begin("rp-ui",false);
   if(prefsReady)model.selectTheme(preferences.getUChar("theme",0)%ui_theme::kCount);
+  if(prefsReady)focusSound=preferences.getBool("focus-sound",false);
   const bool gardenReady=garden_store::begin(millis());
   Serial.printf("Indicator soil UART task=%s\n",local_soil::begin()?"ready-or-disabled":"failed");
   displayReady=indicator::begin();
@@ -500,6 +518,19 @@ void loop() {
   const ui::TouchInput mapped=input==indicator::TouchStatus::Down?ui::TouchInput::Down:input==indicator::TouchStatus::Up?ui::TouchInput::Up:ui::TouchInput::Invalid;
   const ui::Gesture gesture=touch.update(mapped,x,y,now);
   static uint32_t lastDraw=0;static bool first=true;const State state=planter::snapshot();
+  static bool focusSynced=false;static uint32_t focusRevision=0,focusUptime=0;
+  if(state.focusKnown && planter::fresh(state,now)) {
+    if(!focusSynced || state.focusRevision!=focusRevision || state.uptimeMs<focusUptime) {
+      uint32_t remaining=state.focusRemaining;
+      if(state.focusPhase==1){uint32_t elapsed=now-state.receivedMs;remaining=elapsed>=remaining?0:remaining-elapsed;}
+      const bool justFinished=model.timer().running() && state.focusPhase==3;
+      if(state.focusPhase==1 && !settings_ui::isOpen() && !controlsOpen && !garden_ui::isOpen())model.showFocus();
+      model.timer().synchronize(state.focusDuration,remaining,state.focusPhase,now);
+      if(justFinished && focusSound)local_soil::notifyFocusComplete();
+      focusSynced=true;focusRevision=state.focusRevision;
+    }
+    focusUptime=state.uptimeMs;
+  }
   if(gesture!=ui::Gesture::None)handle(gesture,state,now);
   const bool animated=!model.themesOpen() && !settings_ui::isOpen() &&
       (garden_ui::isOpen() || (!controlsOpen && (model.page()==ui::Page::Face || model.page()==ui::Page::Focus)) ||

@@ -13,6 +13,9 @@
 // One-use soil-read session, started only by the main authenticated HTTP API.
 // No active token at boot; disabled by default. Never accepts actuator commands.
 #define ROBO_ENABLE_DIAGNOSTIC_READ 0
+// Experimental v2: SC+MITM bonded phone only; enroll locally on Indicator.
+// Do not enable until reviewing the first-pair UX and testing your phone.
+#define ROBO_ENABLE_BONDED_YOYO 0
 
 #define ROBO_ENABLE_SOIL 0
 // Measure dry/wet values yourself; -1 means no calibration (percent is null).

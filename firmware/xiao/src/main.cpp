@@ -4,6 +4,9 @@
 #include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
+#include <BLESecurity.h>
+#include <Preferences.h>
+#include "bonded_access.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Wire.h>
@@ -81,6 +84,15 @@ BLECharacteristic* bleCharacteristic;
 BLE2902* bleNotifications;
 esp_gatt_if_t bleGattsIf = ESP_GATT_IF_NONE;
 robo::BleSession bleSession;
+robo::BondedAccess bondAccess;
+BLESecurity bondSecurity;
+Preferences companionPrefs;
+bool companionStorage=false;
+uint32_t pairPin=0;
+uint32_t pairConnections=0,pairRequests=0,pairNotifications=0;
+int pairAuthMode=-1,pairFailure=-1;
+bool pairStackSuccess=false;
+uint8_t currentPeer[6]={};
 robo::BlePreparedWrite<MaxBleBytes> blePreparedWrite;
 String deviceId;
 bool sen54Detected = false;
@@ -390,15 +402,33 @@ robo::Result processCommand(const robo::Command& command) {
   robo::Result result;
   {
     Lock guard(coreMutex);
+    const bool oldAutoPrint=controller.autoPrint();
     result = controller.submit(command, millis());
     writePump();
+    if(result.ok && !result.duplicate && command.action=="auto_print") {
+      if(!companionStorage || companionPrefs.putBool("auto-print",command.on)!=1) {
+        controller.failPreference(command.requestId,oldAutoPrint);
+        controller.lookup(command.requestId,result);
+      }
+    }
   }
   if (result.ok && !result.duplicate && command.action == "light") applyLight(true);
-  if (result.ok && !result.duplicate && (command.action == "print" || command.action == "print_daily" || command.action == "print_calibration")) {
+  if (result.ok && !result.duplicate && (command.action == "print" || command.action == "print_scene" || command.action == "print_daily" || command.action == "print_calibration")) {
     PrintJob job{};
     memcpy(job.id, command.requestId.data(), command.requestId.size());
     memcpy(job.text, command.text.data(), command.text.size());
     job.calibration=command.action=="print_calibration";job.isDaily=command.action=="print_daily"; job.daily=command.daily;
+    if(command.action=="print_scene") {
+      job.isDaily=true;job.daily.scene=robo::sceneNumber(command.effect);
+      memcpy(job.daily.note,command.text.data(),command.text.size());
+      robo::drawDailyCard(job.daily,[]{return esp_random();});
+      const auto state=copySample();
+      if(state.soilValid) {
+        job.daily.raw=state.soil;
+        if(robo::calibrated(ROBO_SOIL_DRY_RAW,ROBO_SOIL_WET_RAW))job.daily.soil=lround(robo::soilPercent(state.soil,ROBO_SOIL_DRY_RAW,ROBO_SOIL_WET_RAW));
+      }
+      if(state.environmentValid){job.daily.temperature=lround(state.temperature*10);job.daily.humidity=lround(state.humidity);}
+    }
     if (xQueueSend(printQueue, &job, 0) != pdTRUE) {
       Lock guard(coreMutex);
       controller.finishPrint(command.requestId, false);
@@ -476,8 +506,30 @@ void stateJson(JsonDocument& document) {
     environment["temperature_c"] = nullptr;
     environment["humidity_pct"] = nullptr;
   }
+  {
+    Lock guard(bleMutex);
+    auto yoyo=document.createNestedObject("yoyo");
+    yoyo["enabled"]=bool(ROBO_ENABLE_BONDED_YOYO && companionStorage);
+    yoyo["connect_count"]=pairConnections;
+    yoyo["security_requests"]=pairRequests;
+    yoyo["pin_notifications"]=pairNotifications;
+    yoyo["auth_mode"]=pairAuthMode;
+    yoyo["failure_reason"]=pairFailure;
+    yoyo["stack_success"]=pairStackSuccess;
+    yoyo["paired"]=bondAccess.paired();
+    yoyo["connected"]=bondAccess.authorized();
+    yoyo["pairing"]=bondAccess.enrolling(now);
+    if(bondAccess.enrolling(now))yoyo["pin"]=pairPin;
+  }
   Lock guard(coreMutex);
+  document["auto_print"]=controller.autoPrint();
   JsonObject pump = document.createNestedObject("pump");
+  JsonObject focus = document.createNestedObject("focus");
+  focus["enabled"] = ActionsReady;
+  focus["phase"] = static_cast<int>(controller.focus().phase());
+  focus["revision"] = controller.focus().revision();
+  focus["duration_ms"] = controller.focus().duration();
+  focus["remaining_ms"] = controller.focus().remaining(now);
   pump["enabled"] = ROBO_ENABLE_PUMP && ActionsReady;
   pump["on"] = controller.pumpOn();
   pump["remaining_ms"] = controller.remainingMs(millis());
@@ -634,6 +686,23 @@ void httpCommand() {
   if (command.hasEffect && !jsonString(object["effect"], command.effect)) {
     sendError(400, "invalid_light_fields"); return;
   }
+  if(command.action=="pair_yoyo") {
+    if(object.size()!=2){sendError(400,"unexpected_fields",command.requestId.c_str());return;}
+    bool opened=false;
+    {
+      Lock guard(bleMutex);
+      if(ROBO_ENABLE_BONDED_YOYO && companionStorage && bondAccess.open(millis())) {
+        pairPin=100000+esp_random()%900000;
+        bondSecurity.setStaticPIN(pairPin);
+        bondSecurity.setCapability(ESP_IO_CAP_OUT);
+        bondSecurity.setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+        opened=true;
+      }
+    }
+    robo::Result result;result.requestId=command.requestId;result.ok=opened;
+    result.status=opened?"completed":"rejected";result.error=opened?"":"pairing_unavailable";
+    StaticJsonDocument<384> output;resultJson(output,result);sendJson(opened?200:409,output);return;
+  }
   const robo::Result result = processCommand(command);
   StaticJsonDocument<384> output;
   resultJson(output, result);
@@ -674,6 +743,9 @@ std::vector<std::string> split(const std::string& line) {
 
 const char* shortError(const std::string& error) {
   if (error.compare(0, 5, "tank_") == 0) return "TANK";
+  if (error == "auto_print_disabled")return "MUTE";
+  if (error == "scene_cooldown")return "COOL";
+  if (error == "focus_invalid_state")return "STATE";
   if (error == "actions_disabled") return "LOCK";
   if (error == "pump_disabled" || error == "light_disabled" || error == "printer_disabled") return "OFF";
   if (error == "pump_busy" || error == "printer_busy") return "BUSY";
@@ -695,6 +767,12 @@ std::string bleQuery(const std::string& field) {
   char buffer[32];
   if ((field == "soil" || field == "air" || field == "uv" || field == "env" || field == "ambient") &&
       static_cast<uint32_t>(millis() - current.timestamp) > 3000) return "E:STALE";
+  if(field=="desk") {
+    const std::string raw=current.soilValid?std::to_string(current.soil):"x";
+    const std::string temp=current.environmentValid?std::to_string(int(lround(current.temperature*10))):"x";
+    const std::string hum=current.environmentValid?std::to_string(int(lround(current.humidity))):"x";
+    return "K:"+raw+":"+temp+":"+hum;
+  }
   if (field == "soil") {
     const bool calibrated = robo::calibrated(ROBO_SOIL_DRY_RAW, ROBO_SOIL_WET_RAW);
     const std::string raw = current.soil >= 0 ? std::to_string(current.soil) : "x";
@@ -712,7 +790,19 @@ std::string bleQuery(const std::string& field) {
     snprintf(buffer, sizeof(buffer), "E:%.1f:%.1f:1", current.temperature, current.humidity);
     return buffer;
   }
+  if(field=="pm25" || field=="voc") {
+    float value=field=="pm25"?current.sen54.pm25:current.sen54.voc;
+    if(!current.sen54Valid || !std::isfinite(value))return field=="pm25"?"M:x:0":"V:x:0";
+    snprintf(buffer,sizeof(buffer),"%s:%.1f:1",field=="pm25"?"M":"V",value);return buffer;
+  }
+  if(field=="tank") {snprintf(buffer,sizeof(buffer),"W:%d:%d",current.tankMm,current.tankMm>=20);return buffer;}
   Lock guard(coreMutex);
+  if(field=="focus") {
+    snprintf(buffer,sizeof(buffer),"F:%d:%lu:%lu",int(controller.focus().phase()),
+      static_cast<unsigned long>(controller.focus().remaining(millis())/1000),
+      static_cast<unsigned long>(controller.focus().duration()/1000));return buffer;
+  }
+  if(field=="auto")return controller.autoPrint()?"AUTO:1":"AUTO:0";
   if (field == "pump") {
     snprintf(buffer, sizeof(buffer), "P:%d:%d:%lu", ROBO_ENABLE_PUMP && ActionsReady ? 1 : 0,
              controller.pumpOn() ? 1 : 0, static_cast<unsigned long>(controller.remainingMs(millis())));
@@ -733,7 +823,13 @@ std::string bleQuery(const std::string& field) {
 }
 
 std::string handleBle(const std::string& text) {
-  const auto fields = split(text);
+  auto fields = split(text);
+  if(!fields.empty() && fields[0]=="V") {
+    if(!ROBO_ENABLE_BONDED_YOYO || !bondAccess.authorized())return "E:PAIR";
+    if(fields.size()<2 || (fields[1]!="S" && fields[1]!="C" && fields[1]!="R"))return "E:FORMAT";
+    // The bearer exists only inside firmware. Nothing secret enters the Skill.
+    fields[0]=fields[1];fields[1]=ROBO_DEVICE_TOKEN;
+  } else if(ROBO_ENABLE_BONDED_YOYO) return "E:PAIR";
   if(fields.size()==2 && fields[0]=="Q") {
     if(!ROBO_ENABLE_DIAGNOSTIC_READ || !diagnosticRead.take(fields[1].c_str(),millis()))return "E:AUTH";
     return bleQuery("soil");
@@ -754,7 +850,7 @@ std::string handleBle(const std::string& text) {
   robo::Command command;
   command.requestId = fields[2];
   command.action = fields[3];
-  if (command.action == "water" && fields.size() == 5) {
+  if ((command.action == "water" || command.action == "focus_start") && fields.size() == 5) {
     uint32_t duration;
     if (!robo::parseUnsigned(fields[4], duration)) return "E:" + command.requestId + ":TIME";
     command.hasDuration = true;
@@ -768,7 +864,12 @@ std::string handleBle(const std::string& text) {
   } else if (command.action == "print" && fields.size() == 5) {
     command.hasText = true;
     command.text = fields[4];
-  } else if (command.action != "stop_water" || fields.size() != 4) {
+  } else if(command.action=="auto_print" && fields.size()==5 && (fields[4]=="0" || fields[4]=="1")) {
+    command.hasOn=true;command.on=fields[4]=="1";
+  } else if(command.action=="print_scene" && fields.size()==7 && (fields[5]=="0" || fields[5]=="1")) {
+    command.hasOn=true;command.on=fields[5]=="1";
+    command.hasEffect=command.hasText=true;command.effect=fields[4];command.text=fields[6];
+  } else if ((command.action != "stop_water" && command.action != "focus_pause" && command.action != "focus_resume" && command.action != "focus_reset") || fields.size() != 4) {
     return "E:" + command.requestId + ":ARG";
   }
   return bleResult(processCommand(command));
@@ -834,6 +935,28 @@ void bleGattEvent(esp_gatts_cb_event_t event, esp_gatt_if_t gattsIf, esp_ble_gat
   }
 }
 
+class PairCallbacks : public BLESecurityCallbacks {
+  uint32_t onPassKeyRequest() override {return 0;} // Display-only; no Just Works.
+  void onPassKeyNotify(uint32_t pin) override {Lock guard(bleMutex);++pairNotifications;if(bondAccess.enrolling(millis()))pairPin=pin;}
+  bool onConfirmPIN(uint32_t) override {return false;}
+  bool onSecurityRequest() override {Lock guard(bleMutex);++pairRequests;return companionStorage && bondAccess.mayPair(millis());}
+  void onAuthenticationComplete(esp_ble_auth_cmpl_t result) override {
+    bool accepted=false;
+    {
+      Lock guard(bleMutex);
+      pairAuthMode=result.auth_mode;pairFailure=result.fail_reason;pairStackSuccess=result.success;
+      const bool strong=result.success && (result.auth_mode & ESP_LE_AUTH_REQ_SC_MITM_BOND)==ESP_LE_AUTH_REQ_SC_MITM_BOND;
+      const bool wasPaired=bondAccess.paired();
+      accepted=companionStorage && bondAccess.authenticate(result.bd_addr,strong,millis());
+      if(accepted && !wasPaired && companionPrefs.putBytes("phone",bondAccess.owner(),6)!=6) {
+        bondAccess=robo::BondedAccess{};accepted=false;
+      }
+    }
+    Serial.printf("YOYO encrypted connection: %s\n",accepted?"authenticated":"rejected");
+    if(!accepted)esp_ble_gap_disconnect(result.bd_addr);
+  }
+};
+
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* server, esp_ble_gatts_cb_param_t* param) override {
     bool accepted;
@@ -841,11 +964,17 @@ class ServerCallbacks : public BLEServerCallbacks {
       Lock guard(bleMutex);
       accepted = bleSession.connect(param->connect.conn_id);
       if (accepted) {
+        ++pairConnections;
+        memcpy(currentPeer,param->connect.remote_bda,6);
+        bondAccess.connect(currentPeer);
         xQueueReset(bleQueue);
         blePreparedWrite.reset();
       }
     }
-    if (accepted) BLEDevice::stopAdvertising();
+    if (accepted) {
+      BLEDevice::stopAdvertising();
+      if(ROBO_ENABLE_BONDED_YOYO)esp_ble_set_encryption(param->connect.remote_bda,ESP_BLE_SEC_ENCRYPT_MITM);
+    }
     else server->disconnect(param->connect.conn_id);
   }
   void onDisconnect(BLEServer*, esp_ble_gatts_cb_param_t* param) override {
@@ -854,6 +983,7 @@ class ServerCallbacks : public BLEServerCallbacks {
       Lock guard(bleMutex);
       ownerLeft = bleSession.disconnect(param->disconnect.conn_id);
       if (ownerLeft) {
+        bondAccess.disconnect();
         blePreparedWrite.reset();
         bleCharacteristic->setValue("RoboPlanter/1");
         xQueueReset(bleQueue);
@@ -869,6 +999,7 @@ void bleTask(void*) {
     if (xQueueReceive(bleQueue, &job, portMAX_DELAY) == pdTRUE) {
       Lock guard(bleMutex);
       if (!bleSession.matches(job.ticket)) continue;
+      if(ROBO_ENABLE_BONDED_YOYO && !bondAccess.authorized()){bleReply(job.ticket,"E:PAIR");continue;}
       // Serialize the short command commit with disconnect. Already accepted
       // pump/print work retains its local deadline/result; it is not replayed.
       const std::string response = handleBle(job.text);
@@ -956,7 +1087,7 @@ void setup() {
   http.collectHeaders(headers, 2);
   http.on("/api/v1/state", HTTP_GET, []() {
     if (!httpAuthorized()) return;
-    StaticJsonDocument<3072> output;
+    StaticJsonDocument<4096> output;
     stateJson(output);
     sendJson(200, output);
   });
@@ -967,7 +1098,21 @@ void setup() {
   http.onNotFound([]() { sendError(404, "not_found"); });
   http.begin();
 
+  companionStorage=companionPrefs.begin("rp-companion",false);
+  if(companionStorage) {
+    uint8_t owner[6];
+    if(companionPrefs.getBytesLength("phone")==6 && companionPrefs.getBytes("phone",owner,6)==6)bondAccess.restore(owner);
+    {Lock guard(coreMutex);controller.restoreAutoPrint(companionPrefs.getBool("auto-print",true));}
+  }
   BLEDevice::init(deviceId.c_str());
+  if(ROBO_ENABLE_BONDED_YOYO) {
+    BLEDevice::setSecurityCallbacks(new PairCallbacks());
+    bondSecurity.setCapability(ESP_IO_CAP_OUT);
+    bondSecurity.setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+    bondSecurity.setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
+    bondSecurity.setRespEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
+    bondSecurity.setKeySize(16);
+  }
   BLEDevice::setMTU(247);
   BLEDevice::setCustomGattsHandler(bleGattEvent);
   BLEServer* server = BLEDevice::createServer();
@@ -977,7 +1122,7 @@ void setup() {
       BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY);
   // Declaration properties alone are not ATT permissions. Never expose the
   // library's last written value, which contains the caller's device token.
-  bleCharacteristic->setAccessPermissions(ESP_GATT_PERM_WRITE);
+  bleCharacteristic->setAccessPermissions(ROBO_ENABLE_BONDED_YOYO ? ESP_GATT_PERM_WRITE_ENC_MITM : ESP_GATT_PERM_WRITE);
   bleNotifications = new BLE2902();
   bleCharacteristic->addDescriptor(bleNotifications);
   bleCharacteristic->setValue("RoboPlanter/1");

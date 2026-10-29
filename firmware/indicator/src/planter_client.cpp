@@ -15,7 +15,7 @@
 
 namespace {
 using namespace planter;
-struct Command { Action action; bool on; char id[33]; uint32_t networkRevision; PrintReceipt receipt; };
+struct Command { Action action; bool on; char id[33]; uint32_t networkRevision; PrintReceipt receipt; uint16_t focusMinutes; };
 State shared;
 SemaphoreHandle_t lock = nullptr;
 QueueHandle_t commands = nullptr, stops = nullptr;
@@ -111,7 +111,7 @@ void pollState() {
   const String body = http.getString();
   http.end();
   if (requestNetwork != device_settings::networkRevision()) return;
-  StaticJsonDocument<3072> doc;
+  StaticJsonDocument<4096> doc;
   const auto error = deserializeJson(doc, body);
   if (error || !doc["schema_version"].is<int>() || doc["schema_version"].as<int>() != 1 ||
       !doc["device_id"].is<const char *>()) {
@@ -132,6 +132,20 @@ void pollState() {
   next.soilPercent.valid = next.soilPercent.valid && next.soilCalibrated &&
                            next.soilPercent.value >= 0 && next.soilPercent.value <= 100;
   next.airRaw = reading(doc["air"], "raw");
+  next.yoyoEnabled=doc["yoyo"]["enabled"]==true;
+  next.yoyoPaired=doc["yoyo"]["paired"]==true;
+  next.yoyoConnected=doc["yoyo"]["connected"]==true;
+  next.yoyoPairing=doc["yoyo"]["pairing"]==true;
+  next.yoyoPin=doc["yoyo"]["pin"] | 0U;
+  next.autoPrintKnown=doc["auto_print"].is<bool>();next.autoPrint=doc["auto_print"] | true;
+  auto focus=doc["focus"];
+  next.uptimeMs=doc["uptime_ms"] | 0U;
+  next.focusKnown=focus["enabled"]==true && focus["phase"].is<unsigned>() && focus["phase"].as<unsigned>()<=3 &&
+    focus["duration_ms"].is<uint32_t>() && focus["remaining_ms"].is<uint32_t>() && focus["revision"].is<uint32_t>();
+  if(next.focusKnown) {
+    next.focusPhase=focus["phase"];next.focusDuration=focus["duration_ms"];next.focusRemaining=focus["remaining_ms"];next.focusRevision=focus["revision"];
+    next.focusKnown=next.focusDuration>=60000 && next.focusDuration<=7200000 && next.focusRemaining<=next.focusDuration;
+  }
   next.sen54Enabled = doc["sen54"]["enabled"] == true;
   if (next.sen54Enabled) {
     next.pm25 = reading(doc["sen54"], "pm25_ug_m3");
@@ -269,7 +283,7 @@ void sendCommand(const Command &command) {
   const State state = planter::snapshot();
   if (strcmp(state.requestId, command.id)) return; // superseded by STOP
   const bool stop = command.action == Action::StopWater;
-  const bool enabled = (command.action == Action::Water || stop) ? state.pumpEnabled :
+  const bool enabled = command.action==Action::PairYoyo ? state.yoyoEnabled : command.action==Action::AutoPrint ? state.autoPrintKnown : isFocus(command.action) ? state.focusKnown : (command.action == Action::Water || stop) ? state.pumpEnabled :
                        command.action == Action::Light ? state.lightEnabled : state.printerEnabled;
   if (!enabled || (command.action == Action::Water && !state.waterAllowed) || (!stop && !planter::fresh(state, millis()))) {
     commandResult(command.id, "not_sent", "Unavailable or stale device state", false); return;
@@ -283,6 +297,12 @@ void sendCommand(const Command &command) {
   StaticJsonDocument<1024> doc;
   doc["request_id"] = command.id;
   switch (command.action) {
+    case Action::PairYoyo:doc["action"]="pair_yoyo";break;
+    case Action::AutoPrint:doc["action"]="auto_print";doc["on"]=command.on;break;
+    case Action::FocusStart:doc["action"]="focus_start";doc["duration_ms"]=uint32_t(command.focusMinutes)*60000;break;
+    case Action::FocusPause:doc["action"]="focus_pause";break;
+    case Action::FocusResume:doc["action"]="focus_resume";break;
+    case Action::FocusReset:doc["action"]="focus_reset";break;
     case Action::Water:
       doc["action"] = "water";
       doc["duration_ms"] = PLANTER_WATER_DURATION_MS;
@@ -435,12 +455,13 @@ bool fresh(const State &state, uint32_t now) {
          state.networkRevision == device_settings::networkRevision() && device_settings::planterNetworkReady() &&
          static_cast<uint64_t>(now - state.receivedMs) + state.sampleAgeMs <= kStaleMs;
 }
-bool submit(Action action, bool lightOn, const PrintReceipt *receipt) {
+bool submit(Action action, bool lightOn, const PrintReceipt *receipt, uint16_t focusMinutes) {
+  if(isFocus(action) && (focusMinutes<1 || focusMinutes>120))return false;
   if (!lock || !commands || !stops) return false;
   if (action == Action::Print && (!receipt || (receipt->isDaily ? !robo::validDaily(receipt->daily) : (!receipt->text[0] || !memchr(receipt->text, 0, sizeof(receipt->text)))))) return false;
   xSemaphoreTake(lock, portMAX_DELAY);
   const bool stop = action == Action::StopWater;
-  const bool enabled = (action == Action::Water || stop) ? shared.pumpEnabled :
+  const bool enabled = action==Action::PairYoyo ? shared.yoyoEnabled : action==Action::AutoPrint ? shared.autoPrintKnown : isFocus(action) ? shared.focusKnown : (action == Action::Water || stop) ? shared.pumpEnabled :
                        action == Action::Light ? shared.lightEnabled : shared.printerEnabled;
   if (!enabled || !shared.wifi || shared.networkRevision != device_settings::networkRevision() ||
       (action == Action::Water && !shared.waterAllowed) ||
@@ -451,7 +472,8 @@ bool submit(Action action, bool lightOn, const PrintReceipt *receipt) {
        (receipt->isDaily && (!shared.printerDaily || !robo::validDaily(receipt->daily)))))) {
     xSemaphoreGive(lock); return false;
   }
-  Command command{action, lightOn, {}, device_settings::networkRevision(), {}};
+  Command command{action, lightOn, {}, device_settings::networkRevision(), {}, focusMinutes};
+  command.focusMinutes=focusMinutes;
   if (action == Action::Print) command.receipt = *receipt;
   // Acquire under the settings lock after the checks above: a concurrent UI
   // network change either wins first (STOP rejected) or waits for this STOP.

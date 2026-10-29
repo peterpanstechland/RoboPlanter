@@ -2,15 +2,32 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <cstring>
+#include "printer_text.h"
 
 namespace robo {
 // Integer snapshot, copied through the queue. -9999 means unavailable, never zero.
 struct DailyTicket {
   int card = 0, reversed = 0, english = 0, species = 0;
   int soil = -9999, raw = -9999, temperature = -9999, humidity = -9999;
+  int scene = 0;
+  char note[43] = {};
 };
+inline bool validSceneNote(const std::string& note) {
+  if(note.size()>42)return false;
+  size_t at=0;uint16_t code;int width=0;
+  while(at<note.size()) {
+    if(!nextPrinterCode(note,at,code) || code<32 || code==127 || code=='|')return false;
+    auto glyph=printer_font::find(code);if(!glyph)return false;width+=glyph->advance*22/32;
+  }
+  return width<=336;
+}
+inline int sceneNumber(const std::string& name) {
+  const char* names[]={"checkin","lunch","meetings","rest","lowbattery"};
+  for(int i=0;i<5;++i)if(name==names[i])return i+1;return -1;
+}
 inline bool validDaily(const DailyTicket& d) {
-  return d.card>=0 && d.card<78 && d.reversed>=0 && d.reversed<=1 &&
+  return d.scene>=0 && d.scene<=5 && std::memchr(d.note,0,sizeof(d.note)) && validSceneNote(d.note) && d.card>=0 && d.card<78 && d.reversed>=0 && d.reversed<=1 &&
     d.english>=0 && d.english<=1 && d.species>=0 && d.species<4 &&
     (d.soil==-9999 || (d.soil>=0 && d.soil<=100)) &&
     (d.raw==-9999 || (d.raw>=0 && d.raw<=4095)) &&
@@ -18,7 +35,7 @@ inline bool validDaily(const DailyTicket& d) {
     (d.humidity==-9999 || (d.humidity>=0 && d.humidity<=100));
 }
 inline bool sameDaily(const DailyTicket& a,const DailyTicket& b) {
-  return a.card==b.card && a.reversed==b.reversed && a.english==b.english &&
+  return a.scene==b.scene && std::memcmp(a.note,b.note,sizeof(a.note))==0 && a.card==b.card && a.reversed==b.reversed && a.english==b.english &&
     a.species==b.species && a.soil==b.soil && a.raw==b.raw &&
     a.temperature==b.temperature && a.humidity==b.humidity;
 }

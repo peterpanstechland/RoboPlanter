@@ -24,6 +24,12 @@ struct State {
   Reading pm25, vocIndex, tankDistance, tankLevel;
   bool sen54Enabled = false, tankEnabled = false, tankCalibrated = false;
   bool waterAllowed = false;
+  bool yoyoEnabled=false, yoyoPaired=false, yoyoConnected=false, yoyoPairing=false;
+  uint32_t yoyoPin=0;
+  bool autoPrintKnown=false, autoPrint=true;
+  bool focusKnown = false;
+  uint8_t focusPhase = 0;
+  uint32_t focusRevision = 0, focusRemaining = 0, focusDuration = 0, uptimeMs = 0;
   char waterBlockReason[32] = {};
   bool ambientLightEnabled = false;
   bool soilCalibrationKnown = false, soilCalibrated = false;
@@ -40,10 +46,11 @@ struct State {
   bool commandBlocked = false, uncertain = false;
   uint32_t commandStartedMs = 0;
 };
-enum class Action : uint8_t { Water, StopWater, Light, Print };
+enum class Action : uint8_t { Water, StopWater, Light, Print, FocusStart, FocusPause, FocusResume, FocusReset, PairYoyo, AutoPrint };
+inline bool isFocus(Action a) {return a>=Action::FocusStart && a<=Action::FocusReset;}
 bool begin();
 State snapshot();
 bool fresh(const State &state, uint32_t now);
-bool submit(Action action, bool lightOn = false, const PrintReceipt *receipt = nullptr);
+bool submit(Action action, bool lightOn = false, const PrintReceipt *receipt = nullptr, uint16_t focusMinutes = 25);
 void acknowledgeUncertain();
 }
