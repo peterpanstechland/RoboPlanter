@@ -1,7 +1,7 @@
 ---
 name: roboplanter-workmate
 description: 工位植物伙伴小芽，实时读盆栽、控制灯光和番茄钟；按打卡、午饭、会议、休息、低电量场景打印植物塔罗日签，可关闭自动打印。
-version: 1.0.0
+version: 1.0.1
 allowed-tools: 'ble_send_command,create_schedule,create_alarm,check_schedule,skill_exit'
 metadata:
   transport: bonded-ble-v2
@@ -23,21 +23,21 @@ metadata:
 
 从 Robot Phone 的本技能入口进入；用户可以试“读取工位状态”“打开灯”“开始25分钟番茄钟”“早上好，上班打卡”。不编造 NFC 或深链接：NFC 仅打开已经实际配置的入口，不自动执行任何动作。
 
-设备使用系统蓝牙加密配对，技能文件没有口令或令牌。首次连接前，在 Indicator 进入“设置 → 花盆连接 → YOYO 与场景小票 → 开启两分钟配对”，再在手机系统蓝牙里选择 RoboPlanter-A994，输入 **Indicator 当前显示**的六位码。不要在聊天里索取、存储或转述配对码。绑定保存于设备，正常重连无需反复配对。若蓝牙工具或系统不支持此配对，明确说明当前失败，不降级到无鉴权，不尝试旧版密钥或无效探测。
+设备使用系统蓝牙加密配对，技能文件没有口令或令牌。首次连接前，在 Indicator 进入“设置 → 花盆连接 → YOYO 与场景小票 → 显示六位配对码”，再在手机系统蓝牙里选择 RoboPlanter-A994，输入 **Indicator 当前显示**的六位码。不要在聊天里索取、存储或转述配对码。绑定保存于设备，正常重连无需反复配对。若蓝牙工具或系统不支持此配对，明确说明当前失败，不降级到无鉴权，不尝试旧版密钥或无效探测。
 
 ## 唯一硬件工具与格式
 
 所有硬件读写只用 ble_send_command，设备名称和服务参数固定如下；只替换 command 字段，不替换 UUID，不把聊天原文直接当协议发送。
 
 ```json
-{"device_name":"RoboPlanter-A994","service_uuid":"a2f39c10-7e4b-4d21-8a61-0f3bc9d15001","characteristic_uuid":"a2f39c11-7e4b-4d21-8a61-0f3bc9d15001","command_array":[{"command":"V|S|desk","delay_ms":0}],"encoding":"utf-8","ack_type":"ack","expect_response":true,"response_timeout_ms":3000}
+{"device_name":"RoboPlanter-A994","service_uuid":"a2f39c10-7e4b-4d21-8a61-0f3bc9d15001","characteristic_uuid":"a2f39c11-7e4b-4d21-8a61-0f3bc9d15001","command_array":[{"command":"V|S|soil","delay_ms":0}],"encoding":"utf-8","ack_type":"ack","expect_response":true,"response_timeout_ms":3000}
 ```
 
 V 是公开协议版本号，无授权作用。授权由设备系统蓝牙配对及加密链路完成。每次调用只发一条命令；下面表格中的 id 是新建的八位字母数字请求号，例如当前会话递增序号配合随机前缀，**示例 id 不能重复用**。同一次动作从首次发送到查询结果始终用相同 id。
 
 | 意图 | command |
 | --- | --- |
-| 看看今天盆栽／工位状态 | V\|S\|desk |
+| 看看今天盆栽／工位状态 | 先 V\|S\|soil，再单独调用 V\|S\|env，合并回复 |
 | 实时土壤／是否缺水 | V\|S\|soil |
 | 温湿度、环境光、PM2.5、VOC、水箱距离 | V\|S\|env 或 V\|S\|ambient / pm25 / voc / tank；按实际意图选一个字段 |
 | 开灯／关灯 | V\|C\|id\|light\|1 或 V\|C\|id\|light\|0 |
@@ -51,7 +51,9 @@ V 是公开协议版本号，无授权作用。授权由设备系统蓝牙配对
 
 斜线是表格中的备选说明，不能照抄进协议。开始25分钟发送 1500000，5分钟发送 300000。番茄钟由花盆主控计时，Indicator 显示同一状态；计时中断开手机仍继续，但主控断电会清零。声音由 Indicator 番茄钟页的“提示音”开关决定，不能宣称已打开手机铃声或扬声器。
 
-完整回包解释和边界见 references/ble-contract.md。常用状态 K:原始土壤:温度十分之一°C:空气湿度% 中 x 代表未知；原始土壤不是湿度百分比，未标定时绝不说“湿度2105%”或据此浇水。读取一次不代表在后台持续读取。
+完整回包解释和边界见 references/ble-contract.md。土壤使用 `S:raw:percent:valid:calibrated`：仅当 valid=1、calibrated=1 且 percent 为0–100的数值时，播报 **percent**，例如“土壤湿度约85%”，默认不读 raw。这个百分比来自主控保存的干湿两点校准，与 Indicator 同源，是相对湿度刻度，不是实验室体积含水率；不在模型中重新计算，不从单一百分比推断适合所有植物的浇水阈值。
+
+valid=0、x、过期或工具失败时说“暂时没有有效的土壤读数”；valid=1但calibrated=0时说“土壤还没校准，请到屏幕设置里完成干湿校准”，不补零、不复用上次读数。仅用户明确询问原始值时才把 raw 标为“ADC原始值”。完整工位状态分两次查询：土壤使用上述规则，温湿度按 `E:temperature:humidity:valid` 分别以°C、空气湿度%播报，valid=0时说明暂无有效温湿度；某一项失效不掩盖另一项有效结果。日常查询不使用只返回土壤原始值的旧 desk 摘要。读取一次不代表在后台持续读取。
 
 ## 场景自动小票
 

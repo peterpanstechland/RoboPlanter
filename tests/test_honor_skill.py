@@ -20,7 +20,7 @@ class HonorSkillTests(unittest.TestCase):
             with zipfile.ZipFile(output) as archive:
                 self.assertEqual(archive.namelist(), list(honor.FILES))
                 root = archive.read("SKILL.md")
-                self.assertIn(b"V|S|desk", root)
+                self.assertIn(b"V|S|soil", root)
                 self.assertIn(b"requires_local_pairing", root)
                 self.assertNotIn(b"S|probe|soil", root)
                 self.assertNotIn(b"Q|", root)

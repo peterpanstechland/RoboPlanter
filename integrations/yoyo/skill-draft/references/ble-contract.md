@@ -1,13 +1,14 @@
 # RoboPlanter BLE v2 契约
 
-本契约用于 1.0.0 联调。V 是公开协议标记，设备必须启用 ROBO_ENABLE_BONDED_YOYO；链路需要 Secure Connections + MITM + bonding，并且只有本机两分钟配对窗口内登记的那一部手机可以操作。端侧检查每次连接，不依赖提示词保密。旧令牌、旧单次读权限、无效 probe 均不是 v2 的回退方案。
+本契约用于 1.0.1 联调。V 是公开协议标记，设备必须启用 ROBO_ENABLE_BONDED_YOYO；链路需要 Secure Connections + MITM + bonding，并且只有本机两分钟配对窗口内登记的那一部手机可以操作。端侧检查每次连接，不依赖提示词保密。旧令牌、旧单次读权限、无效 probe 均不是 v2 的回退方案。
 
 固定 GATT 服务 a2f39c10-7e4b-4d21-8a61-0f3bc9d15001，特征 a2f39c11-7e4b-4d21-8a61-0f3bc9d15001，WRITE + NOTIFY，设备 RoboPlanter-A994。先订阅通知，等待写响应和本次业务通知；不把 ACK 或系统配对成功当动作完成。每命令最多240字节；由官方工具/系统处理 ATT 长写，技能不可自行拆串。最长中文场景命令需真机验证。
 
 ## 查询（V|S|字段）
 
-- desk → K:raw:temperature10:humidity。温度除10，湿度为%，raw只表示土壤ADC；x为未知，三项分别解释。
-- soil → S:raw:percent:valid:calibrated。valid=0时raw不能当新读数；calibrated=0时不判断干湿。
+- soil → S:raw:percent:valid:calibrated。日常土壤查询使用此字段；只有valid=1、calibrated=1且percent为0–100时，播报percent为校准后的相对土壤湿度百分比。默认不播报raw，不在模型中再计算校准。
+- 完整工位状态依次单独查询soil和env，合并有效结果。soil无效不妨碍解释有效温湿度，反之亦然。
+- desk → K:raw:temperature10:humidity。保留旧协议兼容，1.0.1日常查询不使用。温度除10，空气湿度为%，raw仅为土壤ADC，不能转述成土壤湿度百分比。
 - env → E:temperature:humidity:valid，温度°C，空气湿度%。
 - ambient → B:raw:valid，只是环境光ADC，不是lux。
 - pm25 → M:value:valid，µg/m³。
@@ -15,10 +16,10 @@
 - tank → W:distance_mm:valid，未完成水箱标定，只报告探头距离，不报余水百分比。
 - focus → F:phase:remaining_seconds:duration_seconds；phase 0待机、1计时、2暂停、3完成。
 - light → L:enabled:on；pump → P:enabled:on:remaining_ms。
-- printer → T:enabled:status；sent仅串口已发，fail需现场恢复，不能继续塞入打印任务。
+- printer → T:enabled:status；sent仅表示主控向配置的打印传输已发送，fail需现场恢复，不能继续塞入打印任务。
 - auto → AUTO:0/1，跨重启保留的自动打印开关。
 
-未知、过期、未标定不能补零。主控按传感器有效性限制，土壤来自Indicator的独立有效期。每次用户明确读取才按需查询，避免闲聊时反复轮询。
+未知、过期、未标定不能补零。valid=0优先解释为暂无有效数据；valid=1但calibrated=0时引导Indicator干湿两点校准，不判断干湿。raw仅在用户明确要看原始值且valid=1时解释为ADC。示例（仅说明解析，不是真实当前读数）：S:1740:85:1:1→约85%；S:1740:x:1:0→尚未校准；S:1740:x:0:1→暂无有效读数；S:2700:0:1:1→0%是有效校准结果，不是缺失。该刻度不是实验室测量的体积含水率。主控按传感器有效性限制，土壤来自Indicator的独立有效期。每次用户明确读取才按需查询，避免闲聊时反复轮询。
 
 ## 动作和结果
 
