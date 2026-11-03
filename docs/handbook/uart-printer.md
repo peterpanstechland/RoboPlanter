@@ -24,6 +24,14 @@ SERVO4 必须没有水泵或舵机；J14 pin3 是 Motor5V，不接打印机电�
 
 GPIO44 保留硬件接收能力；当前代码尚未实现该型号的状态查询与解码，接线完成不代表已经能判断缺纸。GPIO44 仅作接收，不作打印发送。两个 I²C 插座和板载 IMU 均保持原连接。
 
+### 新版 EM5826H 接口说明（2026-11-03）
+
+本机配套的《EM5826H 嵌入式热敏打印模组 用户使用手册 DW_V1.0》正文第 9–10 页明确规定，TTL 四针依次为 **1 GND、2 RX、3 TX、4 RTS**。**第四针是打印机输出的流控信号，不是 VCC，不能沿用旧 EM5826 的电源脚示意。** 打印机仍由独立 DC 电源供电。
+
+手册规定 TTL 可使用 3.3–5V 逻辑，TX 和 RTS 在输出高电平时处于高阻态，需要外部上拉。连接 XIAO 时，上拉目标应为 3.3V。RTS 高表示忙、低表示可接收；它应接主机 CTS 或由软件正确读取，不能当作主机使能输入驱动。手册正文第 2 页写明默认 115200 波特率、默认开启 RTS 流控，而现有 UART 固件没有实现这一路硬件流控。没有串口回复时，需排查上拉、流控及接口选择，不能直接认定接口损坏。
+
+本次排查中，USB 中文与切纸成功，Raspberry Pi Debug Probe 在 115200/8N1 的回环收发逐字节一致，但打印机 TTL 尚未恢复。流控和上拉是新发现的待核对项，尚未证明它们就是不出纸的根因。
+
 厂家[中文 EM5826H 产品页](https://www.donnwei.com/?page_id=24893&post_type=products)也明确写明“58mm热敏带切刀”。产品资料列出 ESC/POS、384 点宽度及默认 9600 波特；此前英文出纸测试使用 115200 波特；接入时以打印机自检页的设置为准。
 
 中文和切纸实现依据提供的 [escpos-sample 示例](https://github.com/peterpanstechland/escpos-sample/tree/60f85d4e8cbcce8956528c7a2d1d0344aa2adf55)：有效宽度 **384 点**，使用 `GS v 0` 光栅指令。正文不是 GBK 字节，而是由固件字库渲染的黑白点阵。结束时发送 `ESC d 6`（`1B 64 06`），开启切刀后紧接 `GS V 0`（`1D 56 00`）；不要替换成示例说明不适用的 65/66 变体。示例的 USB 传输已改为本项目 UART；串口出纸与切刀效果仍需逐台验收。
@@ -83,6 +91,33 @@ python tools/pair_indicator.py --url http://<XIAO当前IP> --device-id <实际de
 ## 工位日签
 
 新固件声明 `printer.daily_layout:"garden-daily-v2"` 后，Indicator 的打印预览会切换为 Logo、植物快照、三行待办、78 张牌随机正逆位塔罗的完整日签。左右滑动查看全部内容，确认只提交一次；详见 [工位日签](daily-ticket.md)。旧固件保留短文字便签。
+
+## BLE 蓝牙应急打印
+
+上述新版手册正文第 4 页规定：开机后双击走纸键开启蓝牙；再双击或重启会关闭蓝牙。默认关闭，同一时间只使用一个通信接口。蓝牙测试时保留独立 DC 供电，断开打印机 USB 和 TTL 信号；其他手机或软件应断开与打印机的连接。
+
+2026-11-03 已实测发现本机 `EM5826H_1C0E` 的 BLE 服务 `18F0`、写特征 `2AF1`（完整 UUID 采用蓝牙标准后缀 `-0000-1000-8000-00805f9b34fb`）。协商 MTU 为 240，128 字节分包、带响应写入并间隔 25ms，已完成中文短票与自动切纸。不要按“第一个可写特征”发送，设备名称特征同样可写。
+
+电脑应急工具 `tools/ble_printer.py` 要求明确指定打印机名称。它只接受本项目 384 点宽、128 行分块、完整走纸与切纸结尾的 ESC/POS 点阵票据；先保存任务编号，再发送数据。出错时记录未知结果，不自动重发。同一编号不能再次提交。
+
+```powershell
+python -m pip install -r tools/requirements-ble-printer.txt
+python tools/ble_printer.py inspect --name EM5826H_1C0E
+python tools/ble_printer.py print --name EM5826H_1C0E --file build/receipt.bin --job-id filming-001
+```
+
+任务日志保存在 Git 忽略的 `build/ble-printer/`。字节发送完成仍需人工确认出纸与切纸。确认上一任务结果后，新的拍摄打印使用新的任务编号。
+
+`tools/encode_daily_receipt.cpp` 使用固件同一套日签渲染器，可把已经冻结的日签 JSON 转成上述 `.bin`。输入字段与设备 `daily` 对象相同：`card`（0–77）、`reversed`、`english`、`species`、`soil`、`raw`、`temperature`（0.1°C）、`humidity`；也可同时提供 `scene` 和 `note`。没有实时读数时必须填 `-9999`，不能用演示数值冒充传感器数据。这个编码器不重新抽牌。
+
+在 Visual Studio C++ 开发者终端构建（需已有 XIAO 的 ArduinoJson 依赖）：
+
+```powershell
+cl /std:c++17 /EHsc /utf-8 /O2 /I"firmware/xiao/.pio/libdeps/xiao_robot_board/ArduinoJson/src" tools/encode_daily_receipt.cpp /Fe:build/encode_daily_receipt.exe
+build/encode_daily_receipt.exe build/ticket.json build/receipt.bin
+```
+
+目前这是一条 **电脑 → BLE → 打印机** 的应急路径。XIAO 固件仍使用 UART，尚未把 YOYO 或 Indicator 的打印请求切换到 BLE。ESP32-S3 支持 BLE，后续直接接入时仍需验证与 YOYO 现有 BLE 服务并行、断连处理和长票发送。
 
 ## 打印后检查
 
