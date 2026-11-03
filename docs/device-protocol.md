@@ -30,7 +30,8 @@ Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/m
 | `ambient_light.enabled`、`raw`、`valid` | 可选 Grove Light v1.2 的环境光 ADC，0–4095、越亮越大；不是lux，与UV和灯带控制分别表示 |
 | `environment.temperature_c`、`humidity_pct`、`valid` | 可选 DHT20 / SHT31 的温湿度和有效性 |
 | `pump.enabled`、`on`、`remaining_ms` | 泵功能是否启用、当前状态和剩余时间 |
-| `light.enabled`、`on`、`effect` | 灯带功能、目标开关及模式；关灯时模式为 `solid` |
+| `light.enabled`、`on`、`effect` | 灯带功能、补光/手动灯效开关及模式；`solid`开启为白光，关闭时可恢复独立在线状态灯 |
+| `light.display_mode`、`pixel_count`、`brightness_limit`、`status_enabled` | 实际显示用途：fill / effect / status_online / status_waiting / off；灯珠数量、0–255亮度上限及状态灯开关 |
 | `auto_light` | 自动开关配置、NVS可写状态、手动暂停与环境光过期标记，见下文 |
 | `printer.enabled`、`status` | 打印功能与软件发送状态：disabled / idle / queued / bytes_sent / recovery_required |
 | `printer.text_format`、`paper_width_dots`、`autocut`、`feedback` | 新固件为 utf8-raster、384、切刀配置布尔值、unavailable；旧固件可能缺省 |

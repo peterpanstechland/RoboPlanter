@@ -27,7 +27,7 @@ void drawAutoLight(const ui_theme::Theme& t,uint32_t now) {
   }
   if(ready && !lightDirty && !lightWaiting)lightDraft=s.autoLight;
   char live[96];
-  if(freshAmbient(s,now))snprintf(live,sizeof(live),tr("环境光  %d   灯带 %s","Light ADC  %d   Strip %s"),int(s.ambientLightRaw.value),s.lightOn?tr("开","ON"):tr("关","OFF"));
+  if(freshAmbient(s,now))snprintf(live,sizeof(live),tr("环境光  %d   补光 %s","Light ADC  %d   Fill %s"),int(s.ambientLightRaw.value),s.lightOn?tr("开","ON"):tr("关","OFF"));
   else snprintf(live,sizeof(live),"%s",tr("环境光  --","Light ADC  --"));
   text(24,84,live,t.ink,24);
   text(24,118,!ready?tr("等待设备就绪；浇水时不能保存","Wait for device; cannot save while watering"):
@@ -35,8 +35,8 @@ void drawAutoLight(const ui_theme::Theme& t,uint32_t now) {
     tr("连续稳定三次才切换，避免反复闪烁","Three stable readings before switching"),t.muted,16);
   const bool busy=lightWriting(s);
   button(kLightMode,lightDraft.enabled?tr("自动模式：开","Automatic: ON"):tr("自动模式：关","Automatic: OFF"),t,lightDraft.enabled,ready&&!busy,24);
-  text(24,204,tr("低于或等于此值开灯","Turn ON at or below"),t.ink,16);
-  text(24,294,tr("高于或等于此值关灯","Turn OFF at or above"),t.ink,16);
+  text(24,204,tr("低于或等于此值开启白光","White fill ON at or below"),t.ink,16);
+  text(24,294,tr("高于或等于此值关闭补光","Fill OFF at or above"),t.ink,16);
   char value[96];
   button(kOnMinus,"-",t,false,ready&&!busy);button(kOnPlus,"+",t,false,ready&&!busy);
   snprintf(value,sizeof(value),"%d  / %s",lightDraft.onBelow,tr("采当前值","Use current"));button(kOnCapture,value,t,false,ready&&!busy&&freshAmbient(s,now),16);

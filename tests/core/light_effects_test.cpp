@@ -33,7 +33,8 @@ void parsingAndLimits() {
     for (uint32_t time = 0; time < 25000; time += 137) {
       for (size_t index = 0; index < 120; index += 7) {
         const auto color = robo::lightColor(kind, time, index, 120);
-        CHECK(color.red <= 100 && color.green <= 100 && color.blue <= 100);
+        const unsigned limit = kind == robo::LightEffect::Solid ? 255 : 100;
+        CHECK(color.red <= limit && color.green <= limit && color.blue <= limit);
       }
     }
   }
@@ -41,8 +42,8 @@ void parsingAndLimits() {
 
 void distinctFrames() {
   using robo::LightEffect;
-  CHECK(equal(robo::lightColor(LightEffect::Solid, 0, 0, 4), {0,100,20}));
-  CHECK(equal(robo::lightColor(LightEffect::Solid, 4000, 3, 4), {0,100,20}));
+  CHECK(equal(robo::lightColor(LightEffect::Solid, 0, 0, 4), {255,255,255}));
+  CHECK(equal(robo::lightColor(LightEffect::Solid, 4000, 3, 4), {255,255,255}));
   const auto dim = robo::lightColor(LightEffect::Breath, 0, 0, 4);
   CHECK(dim.green == 5);
   CHECK(robo::lightColor(LightEffect::Breath, 2000, 0, 4).green == 100);
@@ -102,9 +103,38 @@ void stateAndRollover() {
                   robo::lightColor(effect, (uint64_t{1} << 32) + 100, i, 5)));
   }
 }
+void statusAndFillPriority() {
+  using robo::LightStatus;
+  using robo::LightEffect;
+  CHECK(robo::connectionLightStatus(false,true,true)==LightStatus::Off);
+  CHECK(robo::connectionLightStatus(true,false,true)==LightStatus::Waiting);
+  CHECK(robo::connectionLightStatus(true,true,false)==LightStatus::Waiting);
+  CHECK(robo::connectionLightStatus(true,true,true)==LightStatus::Online);
+  robo::LightOutput output;
+  CHECK(output.configure(false,LightEffect::Solid,LightStatus::Online,0));
+  for(size_t i=0;i<30;++i)CHECK(equal(output.pixel(0,i,30),{0,64,0}));
+  CHECK(black(output.pixel(0,30,30)));
+  CHECK(!output.configure(false,LightEffect::Solid,LightStatus::Online,40));
+  CHECK(!output.animated());
+  CHECK(output.configure(true,LightEffect::Solid,LightStatus::Online,80));
+  for(size_t i=0;i<30;++i)CHECK(equal(output.pixel(80,i,30),{255,255,255}));
+  // Losing connectivity cannot replace requested fill with a status colour.
+  CHECK(!output.configure(true,LightEffect::Solid,LightStatus::Waiting,120));
+  CHECK(equal(output.pixel(120,29,30),{255,255,255}));
+  CHECK(output.configure(false,LightEffect::Solid,LightStatus::Waiting,160));
+  for(size_t i=0;i<30;++i)CHECK(equal(output.pixel(160,i,30),{64,24,0}));
+  CHECK(output.configure(false,LightEffect::Solid,LightStatus::Off,200));
+  CHECK(black(output.pixel(200,29,30)));
+  CHECK(output.configure(true,LightEffect::Breath,LightStatus::Online,240));
+  CHECK(output.animated());
+  CHECK(!output.configure(true,LightEffect::Breath,LightStatus::Waiting,2240));
+  CHECK(equal(output.pixel(2240,29,30),{0,100,20}));
+  CHECK(std::string(robo::lightDisplayMode(false,LightEffect::Solid,LightStatus::Online))=="status_online");
+  CHECK(std::string(robo::lightDisplayMode(true,LightEffect::Solid,LightStatus::Waiting))=="fill");
+}
 }  // namespace
 
 int main() {
-  parsingAndLimits(); distinctFrames(); stateAndRollover();
+  parsingAndLimits(); distinctFrames(); stateAndRollover(); statusAndFillPriority();
   std::cout << "PASS " << checks << " light effect checks\n";
 }

@@ -156,7 +156,7 @@ void todayPage(const State &s,uint32_t now) {
   icon(Icon::Water,260,301,20,0x4B94);
   label(289,302,!s.pumpKnown?tr("泵 · 未知","Pump / unknown"):!s.pumpEnabled?tr("泵 · 未启用","Pump / disabled"):s.pumpOn?tr("泵 · 运行中","Pump / running"):tr("泵 · 已停止","Pump / stopped"),theme().cardInk);
   icon(Icon::Light,260,333,20,0x9B83);
-  label(289,334,!s.lightKnown?tr("灯 · 未知","Light / unknown"):!s.lightEnabled?tr("灯 · 未启用","Light / disabled"):s.lightOn?tr("灯 · 已开启","Light / on"):tr("灯 · 已关闭","Light / off"),theme().cardInk);
+  label(289,334,!s.lightKnown?tr("补光 · 未知","Fill / unknown"):!s.lightEnabled?tr("补光 · 未启用","Fill / disabled"):s.lightOn?tr("补光 · 已开启","Fill / on"):tr("补光 · 已关闭","Fill / off"),theme().cardInk);
   if(s.received&&!fresh)label(374,273,tr("旧状态","Old state"),theme().cardMuted);
   pill(kControls,tr("照顾小盆栽    >","Plant care    >"),theme().accent,contrastInk(theme().accent));
   statusStrip(s,now);
@@ -322,7 +322,7 @@ void controlsPage(const State &s,uint32_t now) {
   ui_text::drawSized(indicator::display(),24,76,tr("照顾盆栽","Plant care"),theme().ink,24);pill(kDismiss,tr("收起","Close"),theme().surface,theme().ink);
   label(24,115,tr("一点水，一点光，一点工作间隙","A little water, light and a break."),theme().muted);
   char waterLabel[32];snprintf(waterLabel,sizeof(waterLabel),tr("浇水 %.1f 秒","Water %.1f s"),PLANTER_WATER_DURATION_MS/1000.0);
-  const char *labels[]={waterLabel,tr("立即停泵","Stop pump"),s.lightOn?tr("关闭灯光","Light off"):tr("开启灯光","Light on"),tr("打印便签","Print note")};
+  const char *labels[]={waterLabel,tr("立即停泵","Stop pump"),s.lightOn?tr("关闭补光","Fill light off"):tr("开启补光","Fill light on"),tr("打印便签","Print note")};
   const Icon symbols[]={Icon::Water,Icon::Water,Icon::Light,Icon::Print};
   auto &g=indicator::display();
   for(uint8_t i=0;i<4;++i) {
@@ -331,7 +331,7 @@ void controlsPage(const State &s,uint32_t now) {
     const uint16_t ink=active?contrastInk(fill):theme().cardMuted;
     g.fillRoundRect(r.x,r.y,r.w,r.h,12,fill);
     icon(symbols[i],r.x+14,r.y+15,24,ink);label(r.x+50,r.y+19,labels[i],ink);
-    const char *hint=active?(i==1?tr("网络停泵，非物理急停","Network stop only"):i==0||i==3?tr("点击查看确认页","Tap to review first"):tr("抬手后发送一次","One request on release")):disabledReason(kActions[i],s,now);
+    const char *hint=active?(i==1?tr("网络停泵，非物理急停","Network stop only"):i==0||i==3?tr("点击查看确认页","Tap to review first"):tr("白光补光，关后恢复状态","White fill / status when off")):disabledReason(kActions[i],s,now);
     clipped(r.x+14,r.y+55,hint,r.w-28,ink);
   }
   g.fillRoundRect(24,340,432,86,12,theme().surface);

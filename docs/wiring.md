@@ -37,7 +37,7 @@ Robot Phone / YOYO Skill ── 加密 BLE ──► XIAO Robot Board
 | Grove Relay v1.2 | SERVO1/J1 pin1，D15 / XIAO GPIO42→SIG | 模块支持3.3–5V，使用已核对的接口电源和共地；白线不接 | 空载通过；用户确认12V/150mA泵、水箱与进出水完成，本机已启用 |
 | Grove Light Sensor v1.2 | SERVO3/J13 pin1，D0 / XIAO GPIO1→黄线OUT | 红线另取3.3V，黑线共地，白线不接 | 遮挡/照亮后ADC明显变化 |
 | EM5826H热敏打印机 | **SERVO4/J14 pin1，D8 / GPIO7→打印机RX**；打印机TX→UART/J10 pin2，D7 / GPIO44 | 独立12V、与XIAO共地；本机返回TX已确认3.3V逻辑 | 中文、比例、78牌日签、切纸、屏幕预览一致通过 |
-| Grove WS2813灯带 | RGB/J7 pin1，D13 / XIAO GPIO40，经板载缓冲→DIN | 适配5V/GND；10颗，亮度上限24/255 | 已接入；屏幕可保存自动阈值，YOYO开关灯待单独验收 |
+| Grove WS2813灯带 | RGB/J7 pin1，D13 / XIAO GPIO40，经板载缓冲→DIN | 适配5V/GND；30颗，亮度上限24/255 | 在线绿灯、等待黄灯；屏幕开启白色补光并可保存自动阈值，物理验收见灯光教程 |
 | 电容式土壤探头 | Indicator左侧Grove ADC黄线→**RP2040 GPIO27** | 3.3V、GND；白线GPIO26不用 | RP2040→屏幕→HTTP→主控→YOYO读数通过；未标定 |
 | Indicator内置蜂鸣器 | RP2040 GPIO19，内部连接 | 无需外接 | 程序已部署、默认关闭；听音待验收 |
 | 无源NFC贴 | 无GPIO接线 | 手机读取标签 | 作为入口；直达指定Skill的链接待验证 |

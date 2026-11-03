@@ -37,8 +37,8 @@ inline LightRgb greenLevel(uint8_t level) {
   return LightRgb(0, level, static_cast<uint8_t>(level / 5));
 }
 
-// Pure, allocation-free frame calculation. All channels stay <= 100, and the
-// hardware's existing ROBO_LED_BRIGHTNESS is applied separately by NeoPixel.
+// Pure, allocation-free frame calculation. Solid uses equal RGB for white fill;
+// animated colours stay <= 100. ROBO_LED_BRIGHTNESS caps the hardware output.
 inline LightRgb lightColor(LightEffect effect, uint64_t elapsedMs, size_t index,
                            size_t count) {
   if (count == 0 || index >= count) return {};
@@ -68,7 +68,7 @@ inline LightRgb lightColor(LightEffect effect, uint64_t elapsedMs, size_t index,
     if (sector == 1) return LightRgb(0, falling, rising);
     return LightRgb(rising, 0, falling);
   }
-  return greenLevel(100);  // Original solid RGB(0,100,20).
+  return LightRgb(255,255,255);
 }
 
 class LightAnimation {
@@ -102,6 +102,41 @@ class LightAnimation {
   LightEffect effect_ = LightEffect::Solid;
   uint32_t updatedMs_ = 0;
   uint64_t elapsedMs_ = 0;
+};
+
+enum class LightStatus { Off, Waiting, Online };
+
+inline LightStatus connectionLightStatus(bool enabled, bool network, bool indicator) {
+  return !enabled ? LightStatus::Off : network && indicator ? LightStatus::Online : LightStatus::Waiting;
+}
+
+inline const char* lightDisplayMode(bool on, LightEffect effect, LightStatus status) {
+  if (on) return effect == LightEffect::Solid ? "fill" : "effect";
+  return status == LightStatus::Online ? "status_online" :
+         status == LightStatus::Waiting ? "status_waiting" : "off";
+}
+
+// Status never changes the controller's requested light state or auto-light
+// override. Fill/effects take priority; switching them off restores live status.
+class LightOutput {
+ public:
+  bool configure(bool on, LightEffect effect, LightStatus status, uint32_t now) {
+    const auto next = on ? LightStatus::Off : status;
+    const bool statusChanged = next != status_;
+    status_ = next;
+    return animation_.configure(on, effect, now) || statusChanged;
+  }
+  bool animated() const { return animation_.on() && animation_.effect() != LightEffect::Solid; }
+  LightRgb pixel(uint32_t now, size_t index, size_t count) const {
+    if (count == 0 || index >= count) return {};
+    if (animation_.on()) return animation_.pixel(now,index,count);
+    if (status_ == LightStatus::Online) return {0,64,0};
+    if (status_ == LightStatus::Waiting) return {64,24,0};
+    return {};
+  }
+ private:
+  LightAnimation animation_;
+  LightStatus status_ = LightStatus::Off;
 };
 
 }  // namespace robo

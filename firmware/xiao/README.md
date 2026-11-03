@@ -40,7 +40,7 @@ These assignments follow the supplied `XIAO Robot Board_V1.0.pdf`, especially pa
 | Ultrasonic Ranger v2.0 | GPIO8 / D9 / SERVO2 J5 pin1 | Single SIG; separate3.3V supply; distance verified, tank calibration pending. |
 | Light Sensor v1.2 | GPIO1 / D0 / SERVO3 J13 pin1 | Separate3.3V; raw ADC follows shade/light. Replaces UV. |
 | SEN54 | SDA GPIO5 / D4, SCL GPIO6 / D5; 0x69 | IIC1/J11 or IIC2/J12; separate5V, I2C pullups/signals3.3V, common ground. Temperature/RH/PM/VOC replace DHT20 and analogAir; no CO2/NOx. |
-| WS2813 strip | GPIO40 / D13 / RGB J7 | Current bench:10 LEDs,24/255 brightness, RMT; local effects verified, phone control pending. |
+| WS2813 strip | GPIO40 / D13 / RGB J7 | Current bench:30 LEDs,24/255 brightness, RMT; green online status and white fill; see lighting tutorial for hardware acceptance. |
 | EM5826H printer | TX GPIO7 / D8 / SERVO4 J14 pin1; RX GPIO44 / D7 / UART J10 pin2 | Independent12V; return logic confirmed3.3V; GPIO43 disconnected.384-dot raster in128-row bands; Chinese,78-card daily ticket, screen preview parity and cutting verified. |
 
 On the supplied V1.0 schematic, J13/J14/J5 pin 1 is the signal, pin 2 is NC, pin 3 is Motor5V, and pin 4 is GND. The firmware does not use Motor5V as a sensor supply. I²C J11/J12 pin 1 is SCL GPIO6, pin 2 SDA GPIO5, pin 3 3.3 V, pin 4 GND. UART J10 pin 1 is TX43, pin 2 RX44, pin 3 3.3 V, pin 4 GND. Verify the exact board revision before using these references.
@@ -110,7 +110,7 @@ Values above show schema/defaults, not a captured device reading. Sensors are sa
 
 `effect` is optional only for `light` with `on:true`: `solid`, `breath`, `chase` or `rainbow`. Omission means `solid`; `on:false` forbids `effect` and resets mode to `solid`. Omitted/explicit `solid` are the same idempotent request. A different effect under the same ID conflicts. HTTP state adds `light.effect`; old clients may ignore it.
 
-A priority-1 task renders every 40 ms without holding the controller mutex during NeoPixel output. OFF clears the strip synchronously before the command returns; it does not wait for an animation cycle. All modes keep the configured brightness cap. A one-LED chase falls back to breathing. Lights start OFF after reboot, are not persisted, and retain their mode on a network disconnection. Timing and power must still be checked on real hardware. See the [lighting tutorial](../../docs/handbook/ws2812-lighting.md).
+A priority-1 task renders every 40 ms without holding the controller mutex during pixel output. Solid ON means white fill. With `ROBO_ENABLE_STATUS_LIGHT=1`, OFF immediately restores dim green when Wi-Fi and Indicator uploads are live, or amber while waiting; without this option it clears the strip. Indicator connectivity uses a 10-second upload limit, separate from the 3-second sensor validity. Status never changes the commanded light state. All modes keep the configured brightness cap. A one-LED chase falls back to breathing. Fill starts OFF after reboot; saved auto-light rules can later turn it on. See the [lighting tutorial](../../docs/handbook/ws2812-lighting.md).
 
 Responses are `{ "ok": true|false, "request_id": "...", "status": "accepted"|"completed"|"rejected", "error": "..." }`. Water and queued print return 202/accepted. Stop/light return 200/completed. Invalid or rejected commands return a 4xx response. Printing accepts strictly validated UTF-8 from the included ASCII/GB2312 bitmap font and LF; raw control codes, unmapped glyphs and malformed encodings are rejected before output.
 

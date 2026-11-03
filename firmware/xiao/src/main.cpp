@@ -82,7 +82,7 @@ Adafruit_NeoPixel pixels(ROBO_LED_COUNT, pins::Rgb, NEO_GRB + NEO_KHZ800);
 #endif
 robo::RemoteSoil remoteSoil;
 robo::DiagnosticReadSession diagnosticRead;
-robo::LightAnimation lightAnimation;
+robo::LightOutput lightOutput;
 BLECharacteristic* bleCharacteristic;
 BLE2902* bleNotifications;
 esp_gatt_if_t bleGattsIf = ESP_GATT_IF_NONE;
@@ -349,6 +349,19 @@ Sample copySample() {
   return current;
 }
 
+robo::LightStatus connectionLightStatus() {
+  bool indicatorOnline;
+  {
+    Lock guard(sensorMutex);
+    // Connectivity tolerates short upload delays; sensor validity remains 3s.
+    // Read the clock under the same lock: a just-arrived sample must not look
+    // stale because its receive timestamp is later than a caller's timestamp.
+    indicatorOnline = ROBO_ENABLE_REMOTE_SOIL && remoteSoil.raw() >= 0 && remoteSoil.age(millis()) <= 10000;
+  }
+  const bool networkOnline = ROBO_WIFI_STA ? WiFi.status() == WL_CONNECTED : WiFi.softAPgetStationNum() > 0;
+  return robo::connectionLightStatus(ROBO_ENABLE_LIGHT && ROBO_ENABLE_STATUS_LIGHT && ActionsReady, networkOnline, indicatorOnline);
+}
+
 void applyLight(bool force = false) {
   if (!ROBO_ENABLE_LIGHT) return;
   Lock outputGuard(lightMutex);
@@ -360,12 +373,12 @@ void applyLight(bool force = false) {
     robo::parseLightEffect(controller.lightEffect(), effect);
   }
   const uint32_t now = millis();
-  const bool changed = lightAnimation.configure(on, effect, now);
-  if (!force && !changed && (!on || effect == robo::LightEffect::Solid)) return;
+  const bool changed = lightOutput.configure(on, effect, connectionLightStatus(), now);
+  if (!force && !changed && !lightOutput.animated()) return;
   // Pixel transmission is outside coreMutex, so it cannot hold the pump deadline
   // behind a strip update. lightMutex also serializes immediate OFF with frames.
   for (size_t i = 0; i < ROBO_LED_COUNT; ++i) {
-    const robo::LightRgb color = lightAnimation.pixel(now, i, ROBO_LED_COUNT);
+    const robo::LightRgb color = lightOutput.pixel(now, i, ROBO_LED_COUNT);
     pixels.setPixelColor(i, color.red, color.green, color.blue);
   }
   pixels.show();
@@ -572,6 +585,7 @@ void stateJson(JsonDocument& document) {
     yoyo["pairing"]=bondAccess.enrolling(now);
     if(bondAccess.enrolling(now))yoyo["pin"]=pairPin;
   }
+  const auto ledStatus = connectionLightStatus();
   Lock guard(coreMutex);
   document["auto_print"]=controller.autoPrint();
   JsonObject pump = document.createNestedObject("pump");
@@ -590,6 +604,12 @@ void stateJson(JsonDocument& document) {
   light["enabled"] = ROBO_ENABLE_LIGHT && ActionsReady;
   light["on"] = controller.lightOn();
   light["effect"] = controller.lightEffect();
+  robo::LightEffect ledEffect = robo::LightEffect::Solid;
+  robo::parseLightEffect(controller.lightEffect(),ledEffect);
+  light["display_mode"] = robo::lightDisplayMode(controller.lightOn(),ledEffect,ledStatus);
+  light["pixel_count"] = ROBO_LED_COUNT;
+  light["brightness_limit"] = ROBO_LED_BRIGHTNESS;
+  light["status_enabled"] = bool(ROBO_ENABLE_LIGHT && ROBO_ENABLE_STATUS_LIGHT && ActionsReady);
   JsonObject automatic = document.createNestedObject("auto_light");
   const auto &autoSettings=controller.autoLight().settings();
   automatic["schema"]=1;

@@ -41,7 +41,7 @@ RoboPlanter 使用 **HONOR Robot Phone** 作为 YOYO 对话入口，使用 **See
 
 ## 其他模块怎么选
 
-当前组合还包括 SEN54、Grove Light Sensor v1.2、Grove Ultrasonic Ranger v2.0、Grove Relay v1.2、10 颗 WS2813 灯带、电容式土壤探头和 EM5826H 串口热敏打印机。选型时先核对版本、工作电压和协议；同样外观不代表同样接法。
+当前组合还包括 SEN54、Grove Light Sensor v1.2、Grove Ultrasonic Ranger v2.0、Grove Relay v1.2、30 颗 WS2813 灯带、电容式土壤探头和 EM5826H 热敏打印机（当前使用BLE传输）。选型时先核对版本、工作电压和协议；同样外观不代表同样接法。
 
 从 [接线总表](../wiring.md) 查看实际引脚和电源分配，再按 [灯带教程](ws2812-lighting.md) 与 [UART 打印教程](uart-printer.md) 单独测试。先完成传感器读取，再接执行器负载。
 

@@ -18,6 +18,10 @@ cl.exe /nologo /std:c++17 /EHsc /utf-8 /W4 "$rpTestSource" /Fe:controller_test.e
 if errorlevel 1 exit /b 1
 controller_test.exe
 if errorlevel 1 exit /b 1
+cl.exe /nologo /std:c++17 /EHsc /utf-8 /W4 "$rpRoot\tests\core\light_effects_test.cpp" /Fe:light_effects_test.exe
+if errorlevel 1 exit /b 1
+light_effects_test.exe
+if errorlevel 1 exit /b 1
 cl.exe /nologo /std:c++17 /EHsc /utf-8 /O2 "$rpRoot\tests\core\daily_ticket_test.cpp" /Fe:daily_ticket_test.exe
 if errorlevel 1 exit /b 1
 daily_ticket_test.exe
