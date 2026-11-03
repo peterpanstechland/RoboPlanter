@@ -135,6 +135,9 @@ struct Sample {
   bool tankSampled = false;
   uint8_t tankEdgeCount = 0;
   bool tankCaptureOverflow = false;
+  bool tankTriggerLowOk = false;
+  bool tankTriggerHighOk = false;
+  uint32_t tankIrqEdges = 0;
   uint32_t timestamp = 0;
 };
 Sample sample;
@@ -267,12 +270,14 @@ volatile bool tankCaptureArmed = false;
 volatile bool tankCaptureOverflow = false;
 volatile uint32_t tankCaptureStarted = 0;
 volatile uint8_t tankCaptureCount = 0;
+volatile uint32_t tankIrqEdges = 0;
 volatile robo::UltrasonicEdge tankEdges[robo::UltrasonicMaxEdges];
 
 void ARDUINO_ISR_ATTR onTankEdge() {
   const uint32_t now = micros();
   const bool high = digitalRead(pins::Ultrasonic) == HIGH;
   portENTER_CRITICAL_ISR(&tankCaptureMux);
+  ++tankIrqEdges;
   if (tankCaptureArmed) {
     const uint32_t elapsed = now - tankCaptureStarted;
     if (elapsed <= robo::UltrasonicTimeoutUs) {
@@ -286,11 +291,19 @@ void ARDUINO_ISR_ATTR onTankEdge() {
   portEXIT_CRITICAL_ISR(&tankCaptureMux);
 }
 
-int readTankDistance(uint32_t& echoUs, bool& signalHigh, uint8_t& edgeCount, bool& overflow) {
+int readTankDistance(uint32_t& echoUs, bool& signalHigh, uint8_t& edgeCount, bool& overflow,
+                     bool& lowOk, bool& highOk, uint32_t& irqEdges) {
   // Grove Ranger v2.0 uses a single bidirectional SIG, powered at 3.3V.
-  pinMode(pins::Ultrasonic, OUTPUT);
+  portENTER_CRITICAL(&tankCaptureMux);
+  tankIrqEdges = 0;
+  portEXIT_CRITICAL(&tankCaptureMux);
+  // Keep input readback while driving the existing trigger, so diagnostics
+  // can separate a clamped/output-faulted line from a missing sensor response.
+  pinMode(pins::Ultrasonic, INPUT | OUTPUT);
   digitalWrite(pins::Ultrasonic, LOW); delayMicroseconds(2);
+  lowOk = digitalRead(pins::Ultrasonic) == LOW;
   digitalWrite(pins::Ultrasonic, HIGH); delayMicroseconds(12);
+  highOk = digitalRead(pins::Ultrasonic) == HIGH;
   digitalWrite(pins::Ultrasonic, LOW);
   portENTER_CRITICAL(&tankCaptureMux);
   tankCaptureCount = 0;
@@ -299,8 +312,8 @@ int readTankDistance(uint32_t& echoUs, bool& signalHigh, uint8_t& edgeCount, boo
   tankCaptureArmed = true;
   const uint32_t started = tankCaptureStarted;
   portEXIT_CRITICAL(&tankCaptureMux);
-  // pinMode preserves the CHANGE interrupt; enable input only after arming so
-  // the trigger itself is not captured and a fast echo cannot be skipped.
+  // pinMode preserves the CHANGE interrupt; release output only after arming.
+  // Trigger edges arrive while disarmed; an initial queued LOW is ignored.
   pinMode(pins::Ultrasonic, INPUT);
   robo::UltrasonicPulse pulse;
   for (;;) {
@@ -319,10 +332,11 @@ int readTankDistance(uint32_t& echoUs, bool& signalHigh, uint8_t& edgeCount, boo
   }
   portENTER_CRITICAL(&tankCaptureMux);
   tankCaptureArmed = false;
+  irqEdges = tankIrqEdges;
   portEXIT_CRITICAL(&tankCaptureMux);
   echoUs = pulse.complete ? pulse.widthUs : 0;
   signalHigh = digitalRead(pins::Ultrasonic) == HIGH;
-  return robo::ultrasonicDistanceMm(echoUs);
+  return lowOk && highOk ? robo::ultrasonicDistanceMm(echoUs) : -1;
 }
 
 void sensorTask(void*) {
@@ -376,7 +390,8 @@ void sensorTask(void*) {
       }
     }
     if (ROBO_ENABLE_ULTRASONIC) {
-      next.tankMm = readTankDistance(next.tankEchoUs, next.tankSignalHigh, next.tankEdgeCount, next.tankCaptureOverflow);
+      next.tankMm = readTankDistance(next.tankEchoUs, next.tankSignalHigh, next.tankEdgeCount,
+        next.tankCaptureOverflow, next.tankTriggerLowOk, next.tankTriggerHighOk, next.tankIrqEdges);
       next.tankSampled = true;
       Lock guard(coreMutex);
       controller.updateTank(next.tankMm, millis());
@@ -604,10 +619,15 @@ void stateJson(JsonDocument& document) {
   tank["capture"] = "gpio_edges";
   tank["edge_count"] = current.tankEdgeCount;
   tank["capture_overflow"] = current.tankCaptureOverflow;
+  tank["trigger_low_ok"] = current.tankTriggerLowOk;
+  tank["trigger_high_ok"] = current.tankTriggerHighOk;
+  tank["irq_edges"] = current.tankIrqEdges;
   tank["valid"] = current.tankMm >= 20;
   tank["calibrated"] = calibration.valid();
   tank["error"] = robo::ultrasonicSampleError(ROBO_ENABLE_ULTRASONIC, current.tankSampled,
     static_cast<uint32_t>(now-current.timestamp), current.tankEchoUs, current.tankSignalHigh);
+  if (ROBO_ENABLE_ULTRASONIC && current.tankSampled && uint32_t(now-current.timestamp)<=3000 &&
+      (!current.tankTriggerLowOk || !current.tankTriggerHighOk)) tank["error"]="trigger_level_mismatch";
   if (current.tankSampled) {
     tank["echo_us"] = current.tankEchoUs;
     tank["signal_high"] = current.tankSignalHigh;

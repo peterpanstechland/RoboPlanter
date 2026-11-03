@@ -48,6 +48,8 @@ Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/m
 
 使用预先准备的边沿采集时，`capture:"gpio_edges"`，`edge_count` 为本次窗口记录的边沿数，`capture_overflow` 为记录溢出标记。只有完整的升沿和降沿才能形成 `echo_us`，溢出或缺边沿不能提供有效距离。旧诊断版本可能没有这三个字段。
 
+触发电平自检版本还返回 `trigger_low_ok` / `trigger_high_ok`：分别在驱动低电平和 12 µs 高电平期间读取 GPIO，检查是否与输出要求一致。采样有效期内出现不一致时，`error` 为 `trigger_level_mismatch`，本次距离无效。`irq_edges` 是本轮触发至采集结束期间进入 GPIO 中断的总次数，可能包含主控自身的触发边沿，不能当成传感器回波数。这些字段需结合 `enabled`、`sample_age_ms` 和 `error` 阅读；未开始采样时的默认 false / 0 不代表硬件故障。电平不一致也不能单独认定主控损坏，需断开外部信号线做空载对照。
+
 `POST /api/v1/calibration` 使用相同 `X-Device-Token` 鉴权和JSON类型，请求体不超过512字节。以下仅为格式示例，勿将示例数字写入实际设备：
 
 ```json
