@@ -33,6 +33,7 @@
 #define ROBO_ENABLE_SEN54 0 // Replaces DHT20/SHT31 and analog Air; I2C 0x69.
 #define ROBO_SEN54_WIRING_CONFIRMED 0 // Separate 5V VCC, SDA/SCL at 3.3V.
 #define ROBO_ENABLE_ULTRASONIC 0 // Grove Ranger v2.0, SERVO2 GPIO8, 3.3V.
+#define ROBO_ULTRASONIC_GPIO 8 // 7: optional SERVO4/D8 only when free and printer TTL physically disconnected.
 #define ROBO_ULTRASONIC_WIRING_CONFIRMED 0 // Disconnect analog Air first.
 // Fixed probe-to-water distances in mm. Unknown calibration blocks watering.
 #define ROBO_TANK_FULL_MM -1

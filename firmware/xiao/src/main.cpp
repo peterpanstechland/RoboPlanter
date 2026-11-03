@@ -31,6 +31,7 @@
 #include "diagnostic_read_session.h"
 #include "dht20.h"
 #include "sen54.h"
+#include "ultrasonic_capture.h"
 #if ROBO_WS2813_RMT
 #include "ws2813_rmt.h"
 #endif
@@ -132,6 +133,8 @@ struct Sample {
   uint32_t tankEchoUs = 0;
   bool tankSignalHigh = false;
   bool tankSampled = false;
+  uint8_t tankEdgeCount = 0;
+  bool tankCaptureOverflow = false;
   uint32_t timestamp = 0;
 };
 Sample sample;
@@ -259,14 +262,65 @@ void probeKnownI2cSensors() {
   }
 }
 
-int readTankDistance(uint32_t& echoUs, bool& signalHigh) {
+portMUX_TYPE tankCaptureMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool tankCaptureArmed = false;
+volatile bool tankCaptureOverflow = false;
+volatile uint32_t tankCaptureStarted = 0;
+volatile uint8_t tankCaptureCount = 0;
+volatile robo::UltrasonicEdge tankEdges[robo::UltrasonicMaxEdges];
+
+void ARDUINO_ISR_ATTR onTankEdge() {
+  const uint32_t now = micros();
+  const bool high = digitalRead(pins::Ultrasonic) == HIGH;
+  portENTER_CRITICAL_ISR(&tankCaptureMux);
+  if (tankCaptureArmed) {
+    const uint32_t elapsed = now - tankCaptureStarted;
+    if (elapsed <= robo::UltrasonicTimeoutUs) {
+      if (tankCaptureCount < robo::UltrasonicMaxEdges) {
+        tankEdges[tankCaptureCount].elapsedUs = elapsed;
+        tankEdges[tankCaptureCount].high = high;
+        ++tankCaptureCount;
+      } else tankCaptureOverflow = true;
+    }
+  }
+  portEXIT_CRITICAL_ISR(&tankCaptureMux);
+}
+
+int readTankDistance(uint32_t& echoUs, bool& signalHigh, uint8_t& edgeCount, bool& overflow) {
   // Grove Ranger v2.0 uses a single bidirectional SIG, powered at 3.3V.
   pinMode(pins::Ultrasonic, OUTPUT);
   digitalWrite(pins::Ultrasonic, LOW); delayMicroseconds(2);
   digitalWrite(pins::Ultrasonic, HIGH); delayMicroseconds(12);
   digitalWrite(pins::Ultrasonic, LOW);
+  portENTER_CRITICAL(&tankCaptureMux);
+  tankCaptureCount = 0;
+  tankCaptureOverflow = false;
+  tankCaptureStarted = micros();
+  tankCaptureArmed = true;
+  const uint32_t started = tankCaptureStarted;
+  portEXIT_CRITICAL(&tankCaptureMux);
+  // pinMode preserves the CHANGE interrupt; enable input only after arming so
+  // the trigger itself is not captured and a fast echo cannot be skipped.
   pinMode(pins::Ultrasonic, INPUT);
-  echoUs = pulseIn(pins::Ultrasonic, HIGH, 25000);
+  robo::UltrasonicPulse pulse;
+  for (;;) {
+    robo::UltrasonicEdge edges[robo::UltrasonicMaxEdges];
+    portENTER_CRITICAL(&tankCaptureMux);
+    edgeCount = tankCaptureCount;
+    overflow = tankCaptureOverflow;
+    for (uint8_t i=0; i<edgeCount; ++i) {
+      edges[i].elapsedUs = tankEdges[i].elapsedUs;
+      edges[i].high = tankEdges[i].high;
+    }
+    portEXIT_CRITICAL(&tankCaptureMux);
+    pulse = robo::decodeUltrasonicEdges(edges,edgeCount,overflow);
+    if (pulse.complete || overflow || uint32_t(micros()-started) >= robo::UltrasonicTimeoutUs) break;
+    vTaskDelay(1);
+  }
+  portENTER_CRITICAL(&tankCaptureMux);
+  tankCaptureArmed = false;
+  portEXIT_CRITICAL(&tankCaptureMux);
+  echoUs = pulse.complete ? pulse.widthUs : 0;
   signalHigh = digitalRead(pins::Ultrasonic) == HIGH;
   return robo::ultrasonicDistanceMm(echoUs);
 }
@@ -322,7 +376,7 @@ void sensorTask(void*) {
       }
     }
     if (ROBO_ENABLE_ULTRASONIC) {
-      next.tankMm = readTankDistance(next.tankEchoUs, next.tankSignalHigh);
+      next.tankMm = readTankDistance(next.tankEchoUs, next.tankSignalHigh, next.tankEdgeCount, next.tankCaptureOverflow);
       next.tankSampled = true;
       Lock guard(coreMutex);
       controller.updateTank(next.tankMm, millis());
@@ -546,6 +600,10 @@ void stateJson(JsonDocument& document) {
   const auto calibration = saved.tank;
   JsonObject tank = document.createNestedObject("water_tank");
   tank["enabled"] = bool(ROBO_ENABLE_ULTRASONIC);
+  tank["signal_gpio"] = pins::Ultrasonic;
+  tank["capture"] = "gpio_edges";
+  tank["edge_count"] = current.tankEdgeCount;
+  tank["capture_overflow"] = current.tankCaptureOverflow;
   tank["valid"] = current.tankMm >= 20;
   tank["calibrated"] = calibration.valid();
   tank["error"] = robo::ultrasonicSampleError(ROBO_ENABLE_ULTRASONIC, current.tankSampled,
@@ -1384,6 +1442,10 @@ void setup() {
   if (ROBO_ENABLE_PRINTER && !ROBO_PRINTER_BLE) {
     printerSerial.begin(ROBO_PRINTER_BAUD, SERIAL_8N1, pins::PrinterRx, pins::PrinterTx);
     if (!printerSerial) failClosed("Startup failed: printer UART unavailable");
+  }
+  if (ROBO_ENABLE_ULTRASONIC) {
+    pinMode(pins::Ultrasonic, INPUT);
+    attachInterrupt(pins::Ultrasonic, onTankEdge, CHANGE);
   }
   if (xTaskCreate(sensorTask, "sensors", 4096, nullptr, 1, nullptr) != pdPASS ||
       xTaskCreate(printerTask, "printer", 6144, nullptr, 1, nullptr) != pdPASS ||

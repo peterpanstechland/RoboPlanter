@@ -71,6 +71,9 @@
 #ifndef ROBO_ENABLE_ULTRASONIC
 #define ROBO_ENABLE_ULTRASONIC 0
 #endif
+#ifndef ROBO_ULTRASONIC_GPIO
+#define ROBO_ULTRASONIC_GPIO 8
+#endif
 #ifndef ROBO_ULTRASONIC_WIRING_CONFIRMED
 #define ROBO_ULTRASONIC_WIRING_CONFIRMED 0
 #endif
@@ -138,7 +141,7 @@
 namespace pins {
 constexpr int Soil = 1;       // D0, SERVO3 signal; supply sensor separately at 3.3V.
 constexpr int Pump = 42;      // D15/SERVO1/J1: active-HIGH Grove Relay v1.2.
-constexpr int Ultrasonic = 8; // D9/SERVO2/J5: replaces analog Air Quality v1.3.
+constexpr int Ultrasonic = ROBO_ULTRASONIC_GPIO; // 8: D9/SERVO2; 7: D8/SERVO4 if UART printer disconnected.
 constexpr int Air = 8;        // D9, SERVO2 signal: servo must be disconnected.
 constexpr int Uv = 1;         // D0, SERVO3 signal; separate 3.3V supply, no servo.
 constexpr int AmbientLight = 1; // Grove Light v1.2 replaces UV on SERVO3/D0.
@@ -187,8 +190,13 @@ static_assert(!ROBO_ENABLE_SEN54 || ROBO_SEN54_WIRING_CONFIRMED,
 static_assert(!(ROBO_ENABLE_SEN54 && (ROBO_ENABLE_DHT20 || ROBO_ENABLE_SHT31 || ROBO_ENABLE_AIR)),
               "SEN54 replaces the legacy environment and analog air sensors");
 static_assert(!ROBO_ENABLE_ULTRASONIC || ROBO_ULTRASONIC_WIRING_CONFIRMED,
-              "Confirm Grove Ranger v2.0 on SERVO2 with separate 3.3V supply");
-static_assert(!(ROBO_ENABLE_ULTRASONIC && ROBO_ENABLE_AIR), "SERVO2 cannot host air ADC and ranger");
+              "Confirm Grove Ranger v2.0 signal pin and separate 3.3V supply");
+static_assert(ROBO_ULTRASONIC_GPIO == 8 || ROBO_ULTRASONIC_GPIO == 7,
+              "Ranger supports only SERVO2/GPIO8 or verified free SERVO4/GPIO7");
+static_assert(!(ROBO_ENABLE_ULTRASONIC && ROBO_ENABLE_AIR && pins::Ultrasonic == pins::Air),
+              "SERVO2 cannot host air ADC and ranger");
+static_assert(!(ROBO_ENABLE_ULTRASONIC && ROBO_ENABLE_PRINTER && !ROBO_PRINTER_BLE && pins::Ultrasonic == pins::PrinterTx),
+              "SERVO4 ranger cannot share the UART printer TX pin; disconnect TTL and use BLE printing");
 static_assert(!ROBO_ENABLE_PUMP || ROBO_ENABLE_ULTRASONIC,
               "Pump requires the water tank sensor and runtime interlock");
 static_assert(ROBO_PRINTER_BAUD >= 9600 && ROBO_PRINTER_BAUD <= 1000000,

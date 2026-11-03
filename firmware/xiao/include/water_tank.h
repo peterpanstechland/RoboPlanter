@@ -16,7 +16,7 @@ inline int ultrasonicDistanceMm(uint32_t pulseUs) {
   return mm >= 20 && mm <= 3500 ? mm : -1;
 }
 // Diagnostics describe the measurement, not a proven electrical fault. A zero
-// pulse can mean any phase of pulseIn timed out; a HIGH pin is only a snapshot.
+// pulse means no complete echo was captured; a HIGH pin is only a snapshot.
 inline const char* ultrasonicSampleError(bool enabled, bool sampled, uint32_t ageMs,
                                          uint32_t pulseUs, bool signalHigh) {
   if (!enabled) return "disabled";

@@ -20,6 +20,8 @@ Optional bench configuration: `ROBO_WIFI_STA=1` connects to the private `ROBO_ST
 
 Dependencies are pinned in `platformio.ini`: Espressif32 6.12.0 (Arduino ESP32 2.0.17), ArduinoJson 6.21.5, Adafruit NeoPixel 1.12.3. Wi-Fi, WebServer, BLE, Wire, HardwareSerial and FreeRTOS come from the Arduino core. The current bench uses the SEN54 driver; legacy sensor drivers remain optional and disabled for this wiring.
 
+Ultrasonic diagnostics: `ROBO_ULTRASONIC_GPIO` defaults to 8 (SERVO2/D9). GPIO7 (SERVO4/D8) is an optional comparison route only after checking that the connector is free and physically disconnecting printer TTL; GPIO7 with enabled UART printing is rejected at compile time. The current 2026-11-03 investigation uses GPIO7 and records the actual pin plus echo edges in `water_tank`. Measurements remain unavailable during the unresolved fault; see the [diagnostic record](../../docs/deployment/ultrasonic-diagnostics-20261103.md).
+
 ```sh
 cd firmware/xiao
 pio run

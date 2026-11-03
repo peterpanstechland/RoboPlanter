@@ -44,7 +44,9 @@ Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/m
 
 `GET /api/v1/state` 额外返回 `calibration`：`schema:1`、`revision`、`writable`、`error`，以及 `dry`、`wet`、`full_mm`、`empty_mm`、`stop_mm`。未设参考值为 `-1`。它与 `soil.calibrated` / `water_tank.calibrated` 一同供客户端显示；不能仅因收到数值便认定已经标定。
 
-`water_tank` 的诊断字段：`echo_us` 为最近测得的高电平脉宽（微秒，0 表示等待脉冲某一阶段超时）；`signal_high` 为测量结束后 SIG 的电平快照；`sample_age_ms` 为这份采样的年龄。首次采样前这三项为 `null`。`error` 可能为 `disabled`、`not_sampled`、`stale`、`echo_timeout`、`signal_high_after_timeout`、`out_of_range`，有效距离时为空字符串。超时后电平高不等于已经证明短路，低也不能单独证明传感器断开；这些字段只帮助区分采样状态。超过 3 秒的旧诊断不可当作当前回波，是否可用仍以 `valid` 为准，水泵保护不依赖诊断字段放行。
+`water_tank` 的诊断字段：`signal_gpio` 为固件使用的信号 GPIO；`echo_us` 为最近测得的高电平脉宽（微秒，0 表示等待脉冲某一阶段超时）；`signal_high` 为测量结束后 SIG 的电平快照；`sample_age_ms` 为这份采样的年龄。首次采样前，脉宽、电平和采样年龄均为 `null`。`error` 可能为 `disabled`、`not_sampled`、`stale`、`echo_timeout`、`signal_high_after_timeout`、`out_of_range`，有效距离时为空字符串。超时后电平高不等于已经证明短路，低也不能单独证明传感器断开；这些字段只帮助区分采样状态。超过 3 秒的旧诊断不可当作当前回波，是否可用仍以 `valid` 为准，水泵保护不依赖诊断字段放行。
+
+使用预先准备的边沿采集时，`capture:"gpio_edges"`，`edge_count` 为本次窗口记录的边沿数，`capture_overflow` 为记录溢出标记。只有完整的升沿和降沿才能形成 `echo_us`，溢出或缺边沿不能提供有效距离。旧诊断版本可能没有这三个字段。
 
 `POST /api/v1/calibration` 使用相同 `X-Device-Token` 鉴权和JSON类型，请求体不超过512字节。以下仅为格式示例，勿将示例数字写入实际设备：
 

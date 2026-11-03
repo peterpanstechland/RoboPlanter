@@ -4,6 +4,7 @@
 #include <cstring>
 #include "../../firmware/xiao/include/sen54.h"
 #include "../../firmware/xiao/include/controller.h"
+#include "../../firmware/xiao/include/ultrasonic_capture.h"
 
 void frame(uint8_t* out, const uint16_t* words) {
   for (unsigned i=0;i<8;++i) {
@@ -25,6 +26,28 @@ robo::Command water(const char* id) {
   robo::Command c;c.requestId=id;c.action="water";c.hasDuration=true;c.durationMs=5000;return c;
 }
 int main() {
+  using robo::UltrasonicEdge;
+  const UltrasonicEdge normal[]={{100,true},{1100,false}};
+  auto pulse=robo::decodeUltrasonicEdges(normal,2,false);
+  assert(pulse.complete&&pulse.widthUs==1000);
+  const UltrasonicEdge fast[]={{0,true},{200,false}};
+  pulse=robo::decodeUltrasonicEdges(fast,2,false);
+  assert(pulse.complete&&pulse.widthUs==200);
+  const UltrasonicEdge lowFirst[]={{0,false},{50,true},{60,true},{250,false}};
+  pulse=robo::decodeUltrasonicEdges(lowFirst,4,false);
+  assert(pulse.complete&&pulse.widthUs==200);
+  assert(!robo::decodeUltrasonicEdges(normal,0,false).complete);
+  assert(!robo::decodeUltrasonicEdges(normal,1,false).complete);
+  assert(!robo::decodeUltrasonicEdges(normal,2,true).complete);
+  const UltrasonicEdge glitch[]={{100,true},{112,false}};
+  pulse=robo::decodeUltrasonicEdges(glitch,2,false);
+  assert(pulse.complete&&robo::ultrasonicDistanceMm(pulse.widthUs)==-1);
+  const UltrasonicEdge late[]={{100,true},{25001,false}};
+  assert(!robo::decodeUltrasonicEdges(late,2,false).complete);
+  const UltrasonicEdge reversed[]={{100,true},{99,false}};
+  assert(!robo::decodeUltrasonicEdges(reversed,2,false).complete);
+  const UltrasonicEdge zero[]={{100,true},{100,false}};
+  assert(!robo::decodeUltrasonicEdges(zero,2,false).complete);
   const uint8_t crcVector[]={0xbe,0xef};assert(robo::sen54Crc(crcVector)==0x92);
   uint8_t bytes[24];uint16_t words[]={101,123,150,201,5025,uint16_t(-1000),1000,0x7fff};
   frame(bytes,words);robo::Sen54Sample sample;

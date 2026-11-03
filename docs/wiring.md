@@ -2,6 +2,8 @@
 
 适用实物：**XIAO ESP32-S3 Plus + XIAO Robot Board V1.0、SenseCAP Indicator D1**，不是 XIAO Sense。本页替代早期 I²C 水位、GPIO43 打印和 SERVO4 水泵方案。[三维接线小工坊](https://peterpanstechland.github.io/roboplanter/#wiring-lab)使用同一版分配。
 
+**2026-11-03 临时排障接线：**当前台架的超声波黄线已从 SERVO2/D9/GPIO8 移到空闲 SERVO4/J14 pin1/D8/GPIO7；红线仍为独立 3.3V，黑线共地。现场固件设置 `ROBO_ULTRASONIC_GPIO=7`，打印机走 BLE，TTL 线已断开。下方基线表和三维示意的 SERVO2 分配不能直接用于这份排障固件；测距尚未恢复，见[超声波排障记录](deployment/ultrasonic-diagnostics-20261103.md)。
+
 ## 硬件认图
 
 <a href="https://www.honor.com/cn/phones/honor-robot-phone/" target="_blank" rel="noopener noreferrer"><img src="/roboplanter/assets/hardware/honor-robot-phone.webp" alt="HONOR Robot Phone 官方产品图" width="100" /></a> <a href="https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32S3-Plus-p-6361.html" target="_blank" rel="noopener noreferrer"><img src="/roboplanter/assets/hardware/xiao-esp32s3-plus.jpg" alt="Seeed XIAO ESP32-S3 Plus 官方产品图" width="200" /></a> <a href="https://www.seeedstudio.com/SenseCAP-Indicator-D1-p-5643.html" target="_blank" rel="noopener noreferrer"><img src="/roboplanter/assets/hardware/sensecap-indicator-d1.png" alt="Seeed SenseCAP Indicator D1 官方产品图，原厂示例界面" width="200" /></a>
