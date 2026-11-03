@@ -1,6 +1,8 @@
 #include <Arduino.h>
+#include <Wire.h>
 #include <driver/gpio.h>
 #include <soc/gpio_struct.h>
+#include <soc/gpio_periph.h>
 #include <soc/io_mux_reg.h>
 
 namespace {
@@ -13,7 +15,7 @@ void snapshot(gpio_num_t pin, const char* mode, const char* phase, int err) {
   Serial.printf("GPIO_TEST gpio=%d mode=%s phase=%s err=%d input=%d latch=%u output_enabled=%u mux=0x%08lx route=0x%08lx\n",
     int(pin), mode, phase, err, gpio_get_level(pin), unsigned(bool(GPIO.out & mask)),
     unsigned(bool(GPIO.enable & mask)),
-    static_cast<unsigned long>(REG_READ(pin == GPIO_NUM_7 ? IO_MUX_GPIO7_REG : IO_MUX_GPIO8_REG)),
+    static_cast<unsigned long>(REG_READ(GPIO_PIN_MUX_REG[pin])),
     static_cast<unsigned long>(GPIO.func_out_sel_cfg[pin].val));
 }
 
@@ -41,7 +43,7 @@ void pulse(gpio_num_t pin, bool native) {
   const int input = gpio_get_level(pin);
   const bool latch = GPIO.out & mask;
   const bool enabled = GPIO.enable & mask;
-  const uint32_t mux = REG_READ(pin == GPIO_NUM_7 ? IO_MUX_GPIO7_REG : IO_MUX_GPIO8_REG);
+  const uint32_t mux = REG_READ(GPIO_PIN_MUX_REG[pin]);
   const uint32_t route = GPIO.func_out_sel_cfg[pin].val;
   gpio_set_level(pin, 0);
   delay(5);
@@ -54,13 +56,28 @@ void pulse(gpio_num_t pin, bool native) {
 
 void runCommand() {
   command[commandLength] = 0;
-  if (!commandOverflow && (strcmp(command, "TEST_D8_EMPTY") == 0 || strcmp(command, "TEST_D9_EMPTY") == 0)) {
-    const gpio_num_t pin = command[6] == '8' ? GPIO_NUM_7 : GPIO_NUM_8;
+  if (!commandOverflow && (strcmp(command, "TEST_D8_EMPTY") == 0 || strcmp(command, "TEST_D9_EMPTY") == 0 ||
+                          strcmp(command, "TEST_D3_EMPTY") == 0)) {
+    const gpio_num_t pin = command[6] == '8' ? GPIO_NUM_7 : command[6] == '9' ? GPIO_NUM_8 : GPIO_NUM_4;
     pulse(pin, false);
     pulse(pin, true);
     Serial.println("GPIO_TEST complete; tested pin released to input");
+  } else if (!commandOverflow && strcmp(command, "PROBE_BARE_I2C") == 0) {
+    // Empty address probes only: no sensor configuration or measurement writes.
+    const bool started = Wire.begin(5, 6, 100000);
+    Wire.setTimeOut(30);
+    if (started) {
+      for (uint8_t address : {uint8_t(0x38), uint8_t(0x44), uint8_t(0x69), uint8_t(0x6a)}) {
+        Wire.beginTransmission(address);
+        const unsigned result = Wire.endTransmission();
+        Serial.printf("GPIO_TEST i2c=0x%02x status=%u ack=%u\n", address, result, unsigned(result == 0));
+      }
+      Wire.end();
+    } else Serial.println("GPIO_TEST i2c_init_failed");
+    pinMode(5, INPUT); pinMode(6, INPUT);
+    Serial.println("GPIO_TEST complete; I2C probe finished");
   } else if (commandLength || commandOverflow) {
-    Serial.println("GPIO_TEST rejected; requires TEST_D8_EMPTY or TEST_D9_EMPTY with that pin physically disconnected");
+    Serial.println("GPIO_TEST rejected; use documented commands only with the tested pins disconnected");
   }
   commandLength = 0;
   commandOverflow = false;
