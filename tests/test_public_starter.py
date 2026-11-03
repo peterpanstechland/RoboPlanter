@@ -119,7 +119,7 @@ class PublicStarterTests(unittest.TestCase):
             download = site / "static/roboplanter/downloads/roboplanter-honor-skill.zip"
             with zipfile.ZipFile(download) as skill:
                 self.assertEqual(skill.namelist(), ["SKILL.md", "references/ble-contract.md", "references/acceptance.md"])
-                self.assertIn(b"V|S|desk", skill.read("SKILL.md"))
+                self.assertIn(b"V|S|soil", skill.read("SKILL.md"))
                 self.assertIn(b"requires_local_pairing", skill.read("SKILL.md"))
                 self.assertNotIn(b"S|probe|soil", skill.read("SKILL.md"))
                 self.assertNotIn(b"Q|", skill.read("SKILL.md"))
