@@ -1,38 +1,37 @@
-# 独立荣耀 Skill：RoboPlanter 工位盆栽伙伴
+# 独立荣耀 Skill：RoboPlanter 工位小芽
 
-这是参赛主线的 **0.3.2 无凭据对话与联通诊断版**，入口为“我的技能”，使用官方BLE工具的接入方案。上一级 `agent-prompt.md` 属于已有LLM+MCP辅助实验，不能代替此技能。
+当前源码为 **1.0.0**，使用新标识 `roboplanter-workmate`。2026-11-03，旧入口在开发者平台重新上架后，手机仍显示已下架，因此按用户要求创建独立条目。平台发布状态与手机实测结果分别记录在[部署记录](../../../docs/deployment/honor-platform-status.md)，不能相互替代。
 
-公开包的正式硬件门禁保持关闭：持续使用的凭据下发及手机长写尚未验收。私有单次土壤读取已另行通过手机验收，不意味着公开包携带读取权限。声明 `ble_send_command,skill_exit`，本包允许明确退出，以及用户明确要求时的一次固定无效凭据 BLE 诊断。
-
-0.3.0增加“小芽”对话风格、同会话承接、短句与少追问、聊天不调用BLE、失败后继续聊天，以及仅在明确退出或转交系统任务时退出。普通换话题不再触发退出。它不改变麦克风、TTS、云台或Indicator表情。
-
-0.3.2将平台根文件统一为此无凭据源码，移除旧私有0.3.1中的临时读取值和单次读取入口。历史测试权限已撤销，不得重新启用旧值。打包器会拒绝任何包内文件携带16位十六进制单次读取命令；这项定向检查不代替完整安全审查。正式读取需要实现受支持的安全凭据通道，不能把密钥移到references、脚本或换一种编码后继续上传。草稿保存不等于手机安装版本已更新。
-
-0.2.1 新增“测试蓝牙联通”口令：只向本次实测广播 RoboPlanter-A994 发送 `S|probe|soil`，预期 `E:AUTH`。它验证传输与拒绝回包，不读取传感器、不控制灯带、不开放正式权限。正式数据访问仍需受支持的凭据渠道。
+主线为 **YOYO → 官方 BLE 工具 → 已绑定 XIAO → 外设**。Indicator 通过局域网 HTTP 操作同一主控；打印机已改为 XIAO 直连 BLE，128 行位图和切纸经现场验收。新建技能不需要清除设备绑定，也不改变现有打印配置。
 
 ## 打包与平台配置
 
-执行 `python tools/package_honor_skill.py` 生成 `build/honor/roboplanter-companion-draft.zip`。只打包白名单中的三份文件：根目录 `SKILL.md` 及 `references/` 下两份说明，无外层文件夹，无凭据或服务器配置，无执行脚本。
+执行 `python tools/package_honor_skill.py`。为兼容现有发布脚本，输出文件仍为 `build/honor/roboplanter-companion-draft.zip`，包内名称与版本以 `SKILL.md` 为准。
+
+只打包三份文件：根目录 `SKILL.md`、`references/ble-contract.md`、`references/acceptance.md`。无外层文件夹、设备令牌、Wi-Fi 密码、配对码、服务器配置或执行脚本。打包器继续阻断历史单次读取凭据；该检查不代替完整安全审查。
 
 | 字段 | 内容 |
 | --- | --- |
-| Slug / 技能名称 | `roboplanter-companion` |
-| 展示名称 | `RoboPlanter工位盆栽伙伴` |
-| 版本 / 环境 | `0.3.2` / Android |
+| Slug / 技能名称 | `roboplanter-workmate` |
+| 展示名称 | `RoboPlanter工位小芽` |
+| 版本 / 环境 | `1.0.0` / Android |
+| 新 Skill ID | `96fbbd3c7947445f836919c40d33add0` |
 | 头像 | `../assets/roboplanter-160.png` |
-| 引导示例 | `今天会开麻了，陪我吐槽两句`；`帮我把周报拆成一件小事` |
-| APIKey开关 | 本版不要求；只发固定无效凭据诊断，不携带真实密钥，固件鉴权保留。 |
+| 引导示例 | `你好，小芽`；`读取工位状态` |
+| Allowed tools | `ble_send_command,create_schedule,create_alarm,check_schedule,skill_exit` |
+| APIKey 开关 | 关闭；设备通过系统加密蓝牙绑定鉴权 |
+| 发布范围 | 私有发布，不上架技能市场 |
 
-平台实际结果见[部署记录](../../../docs/deployment/honor-platform-status.md)。保存草稿、安全检测、真机测试、发布审核和比赛提交是不同步骤。
+## 功能与验收边界
 
-## 进入硬件联调
+- 默认一至两句自然聊天；普通问候不调用硬件。
+- 读取实时状态、开关灯、控制番茄钟、查询动作结果。
+- 打卡、午饭、会议、休息、低电量场景可自动打印；每次先查持久化开关，超时不自动重印。
+- 明确的系统日程或闹钟由官方工具处理，以真实工具结果为准。
+- 此技能尚未开放语音启动浇水；保留紧急停泵。硬件侧已完成的泵测试不自动扩展技能权限。
 
-1. 获取实际广播名称，不沿用小车名称；不上传或在对话中填写设备令牌。
-2. 确认官方支持的鉴权传递方式。当前APIKey说明未定义BLE参数注入，开关本身不能解决。
-3. 外设禁用时，真机验证完整请求、WRITE确认、NOTIFY订阅及返回。服务器MTU设置不代替手机测试，不能自行拆成多条独立命令。
-4. 先只读，再逐项验收灯、ASCII打印，最后短时水泵；分别记录断连、重复ID、超时、不重放。
-5. 修改技能版本及硬件就绪状态后再测试，不由对话解除门禁。
+首次绑定在 Indicator 显示六位码后，于手机系统蓝牙中完成；不在聊天中填写或上传该码。旧技能曾完成手机实时读取，新入口仍需独立验证问候、读取和打印。已知的 XIAO / Indicator 打印成功不等于新技能手机端已通过。
 
-BLE明文令牌与Arduino长写缓存的已知限制见[固件说明](../../../firmware/xiao/README.md)。
+手机应使用开发者平台同一手机号对应的荣耀账号，在 **YOYO → 技能库 → 我的技能 → 私有技能** 安装新名称的条目，开新对话先说“你好”。若普通问候也失败，先排查技能安装入口，避免反复重配蓝牙。
 
-依据：[赛事要求](https://developer.honor.com/cn/activity/page/tg2026081119200701#navigation6)、[技能创建管理](https://developer.honor.com/cn/doc/guides/101775)、[官方BLE案例](https://developer.honor.com/cn/doc/guides/101781)。
+依据：[技能创建管理](https://developer.honor.com/cn/doc/guides/101775)、[官方 BLE 案例](https://developer.honor.com/cn/doc/guides/101781)。

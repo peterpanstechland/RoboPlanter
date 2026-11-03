@@ -8,7 +8,7 @@
 
 ![独立 Skill 从文件到手机的搭建流程](../../web/experience/assets/honor-guide/skill-workflow.svg)
 
-当前主线为0.4.0。下方“最小版”用于学习从空白技能起步，不代表RoboPlanter当前能力；要使用现成硬件流程，导入当前三文件包并按[首次配对](yoyo-companion.md)完成绑定。
+当前源码主线为 **RoboPlanter工位小芽 1.0.0**（`roboplanter-workmate`），平台状态见[部署记录](../deployment/honor-platform-status.md)。下方“最小版”用于学习从空白技能起步，不代表RoboPlanter当前能力；要使用现成硬件流程，导入当前三文件包并按[首次配对](yoyo-companion.md)完成绑定。
 
 测试手机使用 [HONOR Robot Phone](https://www.honor.com/cn/phones/honor-robot-phone/)，控制端为 Seeed XIAO ESP32-S3 Plus + Robot Board。[查看产品实图与型号说明](hardware-catalog.md)。
 
@@ -76,7 +76,7 @@ references/ble-contract.md
 references/acceptance.md
 ```
 
-当前源码构建包为 **0.4.0**：公开V协议配合设备端加密蓝牙绑定，不含设备令牌。已完成手机“读取工位状态”；灯光、计时与场景自动小票已有协议，逐项手机验收仍待完成。首次六位码位置和话术见[YOYO日常交互](yoyo-companion.md)。网站下载以发布manifest为准。[包内说明](../../integrations/yoyo/skill-draft/README.md)。
+当前源码构建包为 **1.0.0**：公开V协议配合设备端加密蓝牙绑定，不含设备令牌。为兼容构建脚本，ZIP 文件名仍保留旧名，包内 slug 为 `roboplanter-workmate`。旧入口曾完成手机“读取工位状态”；新入口需重新验收，灯光、计时与场景自动小票也必须逐项验证。首次六位码位置和话术见[YOYO日常交互](yoyo-companion.md)。网站下载以发布manifest为准。[包内说明](../../integrations/yoyo/skill-draft/README.md)。
 
 ## 4. 导入 ZIP
 
@@ -134,13 +134,13 @@ references/acceptance.md
 
 *图 3：在编辑页打开真机测试，依次配置测试名单和发布测试服务。*
 
-第一轮说“今天有点累，陪我聊两句”，检查回复是否自然简短。再问“现在土壤湿度多少”，仅聊天的最小版应说明未连接；当前0.4.0绑定后应调用真实查询，不能报随机数字。最后说“退出盆栽伙伴”，确认交回 YOYO。
+第一轮只说“你好”，检查能否正常进入；再说“今天有点累，陪我聊两句”，检查回复是否自然简短。再问“现在土壤湿度多少”，仅聊天的最小版应说明未连接；当前1.0.0绑定后应调用真实查询，不能报随机数字。最后说“退出盆栽伙伴”，确认交回 YOYO。
 
 ## 8. 接入官方 BLE 工具
 
 准备好实物和协议后，才加入 `ble_send_command`，并提供已知的设备名、服务 UUID、特征 UUID、命令和响应解释。先完成 [硬件首次接入](hardware-quickstart.md)。
 
-当前0.4.0使用系统蓝牙绑定。先在Indicator显示六位码并到手机系统蓝牙完成配对，然后发一次状态查询。`RoboPlanter-XXXX` 是占位名称，必须改成现场确认的广播名，不能照抄别人的设备标识：
+当前1.0.0使用系统蓝牙绑定。首次使用时先在Indicator显示六位码并到手机系统蓝牙完成配对，然后发一次状态查询；仅更换技能入口不需要主动清除已保存的绑定。`RoboPlanter-XXXX` 是占位名称，必须改成现场确认的广播名，不能照抄别人的设备标识：
 
 ```json
 {
