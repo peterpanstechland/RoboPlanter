@@ -69,17 +69,27 @@ async def run(args: argparse.Namespace) -> None:
         if (args.journal / f"{args.job_id}.intent.json").exists():
             raise FileExistsError("Job already attempted; inspect its result, do not replay")
 
-    discovered = await BleakScanner.discover(timeout=8, return_adv=True)
-    matches = [device for device, advertisement in discovered.values()
-               if (advertisement.local_name or device.name) == args.name
-               and (not args.address or device.address.casefold() == args.address.casefold())]
-    if len(matches) != 1:
-        raise RuntimeError(f"Expected exactly one matching printer, found {len(matches)}")
-    device = matches[0]
+    if args.address:
+        # A known address is unique: connect as soon as it advertises. After a
+        # disconnect this printer can take longer than eight seconds to return.
+        device = await BleakScanner.find_device_by_filter(
+            lambda device, advertisement:
+                device.address.casefold() == args.address.casefold()
+                and (advertisement.local_name or device.name) == args.name,
+            timeout=30)
+        if device is None:
+            raise RuntimeError("Named printer/address did not advertise within 30 seconds; no print data sent")
+    else:
+        discovered = await BleakScanner.discover(timeout=8, return_adv=True)
+        matches = [device for device, advertisement in discovered.values()
+                   if (advertisement.local_name or device.name) == args.name]
+        if len(matches) != 1:
+            raise RuntimeError(f"Expected exactly one matching printer, found {len(matches)}")
+        device = matches[0]
     async with BleakClient(device, timeout=25, winrt={"use_cached_services": False}) as client:
         service = client.services.get_service(SERVICE)
         characteristic = service.get_characteristic(WRITE) if service else None
-        if characteristic is None or "write" not in characteristic.properties:
+        if characteristic is None or not ({"write", "write-without-response"} & set(characteristic.properties)):
             raise RuntimeError("Printer does not expose the verified 18F0/2AF1 write service")
         if data is None:
             print(json.dumps({"name": device.name, "address": device.address,
@@ -87,28 +97,43 @@ async def run(args: argparse.Namespace) -> None:
                               "write": WRITE, "properties": characteristic.properties}))
             return
 
-        chunk_size = min(128, client.mtu_size - 3)
+        use_response = args.transfer == "acknowledged" or "write-without-response" not in characteristic.properties
+        if use_response and "write" not in characteristic.properties:
+            raise RuntimeError("Acknowledged writes are not supported by this printer")
+        chunk_size = min(128 if use_response else 224, client.mtu_size - 3,
+                         512 if use_response else characteristic.max_write_without_response_size)
         if chunk_size < 20:
             raise RuntimeError("Unexpected BLE MTU")
         state = {"name": args.name, "address": device.address, "job_id": args.job_id,
                  "sha256": hashlib.sha256(data).hexdigest(), "bytes_requested": len(data),
-                 "bytes_acknowledged": 0, "chunk_bytes": chunk_size, "status": "sending"}
+                 "bytes_written": 0, "chunk_bytes": chunk_size, "status": "sending",
+                 "write_with_response": use_response, "rate_limit_bytes_s": args.rate}
         result = reserve_job(args.journal, args.job_id, state)
         start = time.monotonic()
         last_progress = start
-        deadline = min(180, 20 + len(data) / 500)
+        # Honour deliberately slow diagnostic rates without cutting a valid
+        # raster packet short. Input size/rate limits bound this to 333 seconds.
+        deadline = 20 + len(data) / min(500, args.rate)
         try:
             for offset in range(0, len(data), chunk_size):
                 remaining = deadline - (time.monotonic() - start)
                 if remaining <= 0:
                     raise TimeoutError("BLE receipt deadline exceeded")
                 chunk = data[offset:offset + chunk_size]
-                await asyncio.wait_for(client.write_gatt_char(characteristic, chunk, response=True),
+                await asyncio.wait_for(client.write_gatt_char(characteristic, chunk, response=use_response),
                                        timeout=min(5, remaining))
-                state["bytes_acknowledged"] += len(chunk)
-                await asyncio.sleep(.025)
+                state["bytes_written"] += len(chunk)
+                # Conservative pacing cap based on the 115200/8N1 setting;
+                # the printer's internal BLE buffer capacity is not documented.
+                # Pace against total elapsed time instead of adding a delay to
+                # every Windows API call (whose own latency varies).
+                due = start + state["bytes_written"] / args.rate
+                if due > time.monotonic():
+                    await asyncio.sleep(due - time.monotonic())
+                if use_response:
+                    await asyncio.sleep(.025)
                 if time.monotonic() - last_progress >= 5:
-                    print(f"BLE {state['bytes_acknowledged']}/{len(data)} bytes", flush=True)
+                    print(f"BLE {state['bytes_written']}/{len(data)} bytes", flush=True)
                     last_progress = time.monotonic()
             await asyncio.sleep(1)
             state["status"] = "bytes_sent_physical_confirmation_required"
@@ -128,10 +153,14 @@ def main() -> None:
     parser.add_argument("--address", help="Optionally require this exact Bluetooth address")
     parser.add_argument("--file", type=Path, help="RoboPlanter .bin from the shared raster encoder")
     parser.add_argument("--job-id", help="Unique ID for this deliberate physical print")
+    parser.add_argument("--transfer", choices=["paced", "acknowledged"], default="paced")
+    parser.add_argument("--rate", type=int, default=9600, help="Paced throughput cap in bytes/second (256-11520)")
     parser.add_argument("--journal", type=Path, default=Path(__file__).resolve().parents[1] / "build/ble-printer")
     args = parser.parse_args()
     if args.command == "print" and (args.file is None or args.job_id is None):
         parser.error("print requires --file and --job-id")
+    if not 256 <= args.rate <= 11520:
+        parser.error("rate must be between 256 and 11520 bytes/second")
     asyncio.run(run(args))
 
 
