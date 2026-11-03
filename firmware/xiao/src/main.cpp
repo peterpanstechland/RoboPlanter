@@ -129,6 +129,9 @@ struct Sample {
   robo::Sen54Sample sen54;
   bool sen54Valid = false;
   int tankMm = -1;
+  uint32_t tankEchoUs = 0;
+  bool tankSignalHigh = false;
+  bool tankSampled = false;
   uint32_t timestamp = 0;
 };
 Sample sample;
@@ -256,14 +259,16 @@ void probeKnownI2cSensors() {
   }
 }
 
-int readTankDistance() {
+int readTankDistance(uint32_t& echoUs, bool& signalHigh) {
   // Grove Ranger v2.0 uses a single bidirectional SIG, powered at 3.3V.
   pinMode(pins::Ultrasonic, OUTPUT);
   digitalWrite(pins::Ultrasonic, LOW); delayMicroseconds(2);
   digitalWrite(pins::Ultrasonic, HIGH); delayMicroseconds(12);
   digitalWrite(pins::Ultrasonic, LOW);
   pinMode(pins::Ultrasonic, INPUT);
-  return robo::ultrasonicDistanceMm(pulseIn(pins::Ultrasonic, HIGH, 25000));
+  echoUs = pulseIn(pins::Ultrasonic, HIGH, 25000);
+  signalHigh = digitalRead(pins::Ultrasonic) == HIGH;
+  return robo::ultrasonicDistanceMm(echoUs);
 }
 
 void sensorTask(void*) {
@@ -317,7 +322,8 @@ void sensorTask(void*) {
       }
     }
     if (ROBO_ENABLE_ULTRASONIC) {
-      next.tankMm = readTankDistance();
+      next.tankMm = readTankDistance(next.tankEchoUs, next.tankSignalHigh);
+      next.tankSampled = true;
       Lock guard(coreMutex);
       controller.updateTank(next.tankMm, millis());
       writePump();
@@ -542,6 +548,17 @@ void stateJson(JsonDocument& document) {
   tank["enabled"] = bool(ROBO_ENABLE_ULTRASONIC);
   tank["valid"] = current.tankMm >= 20;
   tank["calibrated"] = calibration.valid();
+  tank["error"] = robo::ultrasonicSampleError(ROBO_ENABLE_ULTRASONIC, current.tankSampled,
+    static_cast<uint32_t>(now-current.timestamp), current.tankEchoUs, current.tankSignalHigh);
+  if (current.tankSampled) {
+    tank["echo_us"] = current.tankEchoUs;
+    tank["signal_high"] = current.tankSignalHigh;
+    tank["sample_age_ms"] = static_cast<uint32_t>(now-current.timestamp);
+  } else {
+    tank["echo_us"] = nullptr;
+    tank["signal_high"] = nullptr;
+    tank["sample_age_ms"] = nullptr;
+  }
   if (current.tankMm >= 20) tank["distance_mm"] = current.tankMm;
   else tank["distance_mm"] = nullptr;
   const float level = robo::tankLevelPercent(current.tankMm, calibration);

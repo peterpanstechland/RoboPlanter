@@ -40,6 +40,15 @@ int main() {
   bus.fail=true;assert(robo::readSen54(bus,sample)==robo::Sen54Result::Transport);
   assert(robo::ultrasonicDistanceMm(0)==-1&&robo::ultrasonicDistanceMm(100)==-1);
   assert(robo::ultrasonicDistanceMm(1000)==170&&robo::ultrasonicDistanceMm(25000)==-1);
+  assert(!strcmp(robo::ultrasonicSampleError(false,false,0,0,false),"disabled"));
+  assert(!strcmp(robo::ultrasonicSampleError(true,false,0,0,false),"not_sampled"));
+  // Old good measurements must never hide a stopped sensor task.
+  assert(!strcmp(robo::ultrasonicSampleError(true,true,3001,1000,false),"stale"));
+  assert(!*robo::ultrasonicSampleError(true,true,3000,1000,false));
+  assert(!strcmp(robo::ultrasonicSampleError(true,true,0,0,false),"echo_timeout"));
+  assert(!strcmp(robo::ultrasonicSampleError(true,true,0,0,true),"signal_high_after_timeout"));
+  assert(!strcmp(robo::ultrasonicSampleError(true,true,0,100,false),"out_of_range"));
+  assert(!strcmp(robo::ultrasonicSampleError(true,true,0,25000,false),"out_of_range"));
   robo::Config cfg;cfg.actionsEnabled=cfg.credentialsConfigured=cfg.pumpEnabled=true;
   cfg.maxWaterMs=5000;cfg.tankRequired=true;
   robo::Controller uncalibrated(cfg);uncalibrated.updateTank(100,0);

@@ -168,6 +168,8 @@ Wi-Fi 关联与 HTTP 业务是两层。依次检查：
 
 核对SERVO2 GPIO8单SIG和独立3.3V；保持探头干燥并对准平面，避开过近目标和箱壁。未建水箱、未标定或泵未启用时，按钮不可用是当前正确状态，不删除保护条件。
 
+若温湿度和土壤仍更新，只有水箱无读数，先查看主控 `water_tank`：`echo_timeout` 表示没有完成一次有效脉宽测量；`signal_high_after_timeout` 表示超时后 SIG 仍为高；非零 `echo_us` 配合 `out_of_range` 表示测得脉宽超出允许距离；`stale` 表示采样过期。不要把超时直接认定为模块损坏。先用固定平板测试，再断电重插和测量模块端 VCC/GND，区分目标、接线与供电问题。[Seeed 官方说明](https://wiki.seeedstudio.com/Grove-Ultrasonic_Ranger/)要求避免热插拔，V2 支持 3.3V 系统；当前分线使用独立 3.3V，勿直接改接 Servo 5V 或让 5V 回波进入 GPIO。排查期间保留无效水位的禁泵保护。
+
 ## 灯带没亮 / 颜色异常
 
 先看 `light.enabled`；如果 false，检查总开关、非默认令牌和灯外设开关。若 `on:true` 但实物没亮，断电后核对 DIN/DOUT、GND、额定供电、灯数、协议和驱动缓冲；软件状态表示命令，不是光学反馈。

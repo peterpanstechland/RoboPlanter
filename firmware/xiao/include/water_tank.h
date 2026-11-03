@@ -15,6 +15,16 @@ inline int ultrasonicDistanceMm(uint32_t pulseUs) {
   const int mm = int((pulseUs * 340U + 1000U) / 2000U);
   return mm >= 20 && mm <= 3500 ? mm : -1;
 }
+// Diagnostics describe the measurement, not a proven electrical fault. A zero
+// pulse can mean any phase of pulseIn timed out; a HIGH pin is only a snapshot.
+inline const char* ultrasonicSampleError(bool enabled, bool sampled, uint32_t ageMs,
+                                         uint32_t pulseUs, bool signalHigh) {
+  if (!enabled) return "disabled";
+  if (!sampled) return "not_sampled";
+  if (ageMs > 3000) return "stale";
+  if (!pulseUs) return signalHigh ? "signal_high_after_timeout" : "echo_timeout";
+  return ultrasonicDistanceMm(pulseUs) < 0 ? "out_of_range" : "";
+}
 inline float tankLevelPercent(int mm, const TankCalibration& c) {
   if (!c.valid() || mm < 20 || mm > 3500) return -1;
   const float p = 100.0f * (c.emptyMm - mm) / (c.emptyMm - c.fullMm);
