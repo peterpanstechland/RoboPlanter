@@ -12,11 +12,12 @@ namespace {
 using device_settings::Language;
 using device_settings::WifiError;
 using device_settings::WifiPhase;
-enum class Page : uint8_t { Menu, Wifi, Password, About, Planter, Yoyo, Calibration, Soil, Tank, ResetCalibration, AutoLight };
+enum class Page : uint8_t { Menu, Wifi, Password, About, Planter, Yoyo, Calibration, Soil, Tank, ResetCalibration, AutoLight, RepairYoyo };
 struct Rect { int16_t x, y, w, h; };
 constexpr Rect kChinese{24, 117, 208, 48}, kEnglish{248, 117, 208, 48};
 constexpr Rect kWifi{16, 181, 216, 76}, kLightSettings{248,181,216,76}, kPlanter{16, 394, 216, 54}, kAbout{248, 394, 216, 54};
 constexpr Rect kCompanion{24,332,208,60}, kCalibration{248,332,208,60}, kPairPhone{24,174,432,54}, kAutoPrint{24,316,432,54};
+constexpr Rect kRepairConfirm{24,390,208,64},kRepairCancel{248,390,208,64};
 constexpr Rect kPairedNetwork{24, 411, 208, 52}, kNetworkSettings{248, 411, 208, 52};
 constexpr Rect kMinus{24, 321, 56, 56}, kSlider{96, 321, 288, 56}, kPlus{400, 321, 56, 56};
 constexpr Rect kRefresh{16, 422, 100, 48}, kPrevious{124, 422, 64, 48};
@@ -271,21 +272,40 @@ void drawPlanter(const ui_theme::Theme &t, uint32_t now) {
 void drawYoyo(const ui_theme::Theme &t,uint32_t now) {
   const auto state=planter::snapshot();
   const bool ready=planter::fresh(state,now) && !state.commandBlocked;
-  text(24,90,state.yoyoConnected?tr("手机已安全连接","Phone securely connected"):
+  text(24,90,state.yoyoRepairing?tr("正在修复手机配对","Repairing phone pairing"):
+    state.yoyoConnected?tr("手机已安全连接","Phone securely connected"):
+    !strcmp(state.yoyoStage,"pairing_timeout")?tr("手机认证超时，请重新配对","Phone timed out. Pair again"):
     state.yoyoPaired?tr("已配对，等待手机连接","Paired. Waiting for phone"):
     tr("首次连接需要手机配对","Pair your phone on first use"),t.ink,24);
-  text(24,130,state.yoyoPaired?tr("回到 YOYO 即可读取工位状态","Return to YOYO to read desk status"):
-    state.yoyoPairing?tr("在手机输入下方六位码","Enter the six digits below on your phone"):
+  text(24,130,state.yoyoPairing?tr("在手机输入下方六位码","Enter the six digits below on your phone"):
+    state.yoyoPaired?tr("连接异常时可修复手机配对","Use repair if the phone cannot connect"):
     tr("先点下方按钮，再连接手机蓝牙","Tap below, then connect in phone Bluetooth"),t.muted,16);
-  button(kPairPhone,state.yoyoPairing?tr("配对窗口已开启","Pairing window open"):state.yoyoPaired?tr("手机已配对","Phone paired"):tr("显示六位配对码","Show pairing code"),t,false,
-    ready && state.yoyoEnabled && !state.yoyoPaired && !state.yoyoPairing,24);
+  button(kPairPhone,state.yoyoRepairing?tr("正在修复，请稍候","Repairing, please wait"):
+    state.yoyoPairing?tr("配对窗口已开启","Pairing window open"):state.yoyoPaired?tr("修复手机配对","Repair phone pairing"):tr("显示六位配对码","Show pairing code"),t,false,
+    ready && state.yoyoEnabled && !state.yoyoPairing && !state.yoyoRepairing && (!state.yoyoPaired || state.yoyoRepairSupported),24);
   if(state.yoyoPairing && state.yoyoPin>=100000 && state.yoyoPin<=999999) {
     char pin[24];snprintf(pin,sizeof(pin),"PIN  %06lu",static_cast<unsigned long>(state.yoyoPin));text(80,240,pin,t.accent,48);
-  } else text(24,253,state.yoyoPaired?tr("下次连接无需重新输入配对码","No new code needed for later connections"):
+  } else text(24,253,!strcmp(state.yoyoStage,"repair_restart_required")?tr("修复未完成，请重启花盆主控","Repair incomplete. Restart planter"):
+    state.yoyoPaired?tr("正常重连无需操作；修复前会再次确认","Normal reconnect needs no repair" ):
     tr("六位码在此显示，两分钟有效","Six digits appear here, valid for two minutes"),t.muted,16);
   button(kAutoPrint,state.autoPrint?tr("场景自动打印：开","Scene auto-print: ON"):tr("场景自动打印：关","Scene auto-print: OFF"),t,state.autoPrint,ready&&state.autoPrintKnown,24);
   text(24,392,tr("同一场景五分钟内仅打印一次","Same scene: at most once per five minutes"),t.muted,16);
   text(24,423,tr("关闭后仍可主动要求打印","Explicit print requests still work when off"),t.muted,16);
+}
+void drawRepairYoyo(const ui_theme::Theme &t,uint32_t now) {
+  const auto state=planter::snapshot();
+  text(24,94,tr("重新绑定这部手机","Pair this phone again"),t.ink,24);
+  text(24,145,tr("将清除花盆保存的旧手机绑定。","Remove the planter's old phone bond."),t.muted,16);
+  text(24,183,tr("请先在手机忽略 RoboPlanter，","Forget RoboPlanter on the phone,"),t.ink,16);
+  text(24,214,tr("并暂时关闭手机蓝牙。","then turn phone Bluetooth off."),t.ink,16);
+  text(24,258,tr("确认后显示新码，两分钟内完成配对。","Confirm for a new two-minute code."),t.muted,16);
+  text(24,290,tr("Wi-Fi、标定和打印机设置都会保留。","Wi-Fi, sensors and printer are kept."),t.muted,16);
+  const bool ready=planter::fresh(state,now) && !state.commandBlocked && state.yoyoEnabled && state.yoyoRepairSupported && state.yoyoPaired && !state.yoyoLinkConnected && !state.yoyoRepairing;
+  text(24,341,state.yoyoLinkConnected?tr("等待手机断开蓝牙连接","Waiting for phone to disconnect"):
+    ready?tr("已就绪，确认后可重新打开手机蓝牙","Ready. Turn Bluetooth on after confirming"):
+    tr("正在等待花盆状态","Waiting for planter status"),t.muted,16);
+  button(kRepairConfirm,tr("确认重新配对","Confirm repair"),t,true,ready,24);
+  button(kRepairCancel,tr("取消","Cancel"),t,false,true,24);
 }
 #include "calibration_ui.h"
 #include "auto_light_ui.h"
@@ -307,6 +327,7 @@ void back() {
   else if (page == Page::Soil || page == Page::Tank) page = Page::Calibration;
   else if (page == Page::Calibration) page = Page::Planter;
   else if(page==Page::Yoyo)page=Page::Planter;
+  else if(page==Page::RepairYoyo)page=Page::Yoyo;
   else if (page == Page::Password) { selectedSsid[0] = 0; page = Page::Wifi; }
   else page = Page::Menu;
 }
@@ -316,6 +337,7 @@ const char *title() {
     case Page::Password: return tr("连接网络", "Join network");
     case Page::About: return tr("关于设备", "About device");
     case Page::Yoyo: return tr("YOYO 伙伴", "YOYO companion");
+    case Page::RepairYoyo: return tr("修复手机配对", "Repair pairing");
     case Page::Planter: return tr("花盆连接", "Planter connection");
     case Page::Calibration: return tr("传感器校准", "Sensor calibration");
     case Page::Soil: return tr("土壤干湿校准", "Soil calibration");
@@ -336,6 +358,7 @@ void draw(uint32_t now, uint8_t themeId) {
     case Page::About: drawAbout(t); break;
     case Page::Planter: drawPlanter(t, now); break;
     case Page::Yoyo: drawYoyo(t,now);break;
+    case Page::RepairYoyo:drawRepairYoyo(t,now);break;
     case Page::Calibration: drawCalibrationMenu(t, now); break;
     case Page::Soil: case Page::Tank: drawCalibrationEditor(t, now); break;
     case Page::ResetCalibration: drawCalibrationReset(t); break;
@@ -357,10 +380,19 @@ bool handle(ui::Gesture gesture, const ui::TouchGate &touch, uint32_t now) {
     else if (tapped(kMinus, touch)) brightness(indicator::brightness() > 10 ? indicator::brightness() - 5 : 5);
     else if (tapped(kPlus, touch)) brightness(indicator::brightness() < 95 ? indicator::brightness() + 5 : 100);
     else if (tapped(kSlider, touch)) brightness(static_cast<uint8_t>(5 + (touch.lastX() - 96) * 95 / 287));
+  } else if(page==Page::RepairYoyo) {
+    const auto state=planter::snapshot();
+    if(tapped(kRepairCancel,touch))page=Page::Yoyo;
+    else if(tapped(kRepairConfirm,touch) && planter::fresh(state,now) && !state.commandBlocked && state.yoyoEnabled && state.yoyoRepairSupported && state.yoyoPaired && !state.yoyoLinkConnected && !state.yoyoRepairing) {
+      if(planter::submit(planter::Action::RepairYoyo))page=Page::Yoyo;
+    }
   } else if(page==Page::Yoyo) {
     const auto state=planter::snapshot();
     if(planter::fresh(state,now) && !state.commandBlocked) {
-      if(tapped(kPairPhone,touch) && state.yoyoEnabled && !state.yoyoPaired && !state.yoyoPairing)planter::submit(planter::Action::PairYoyo);
+      if(tapped(kPairPhone,touch) && state.yoyoEnabled && !state.yoyoPairing && !state.yoyoRepairing) {
+        if(state.yoyoPaired) {if(state.yoyoRepairSupported)page=Page::RepairYoyo;}
+        else planter::submit(planter::Action::PairYoyo);
+      }
       else if(tapped(kAutoPrint,touch) && state.autoPrintKnown)planter::submit(planter::Action::AutoPrint,!state.autoPrint);
     }
   } else if (page == Page::Planter) {

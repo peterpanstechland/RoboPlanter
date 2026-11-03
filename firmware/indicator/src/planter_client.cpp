@@ -174,6 +174,10 @@ void pollState() {
   next.yoyoPaired=doc["yoyo"]["paired"]==true;
   next.yoyoConnected=doc["yoyo"]["connected"]==true;
   next.yoyoPairing=doc["yoyo"]["pairing"]==true;
+  next.yoyoLinkConnected=doc["yoyo"]["link_connected"]==true;
+  next.yoyoRepairSupported=doc["yoyo"]["repair_supported"]==true;
+  next.yoyoRepairing=doc["yoyo"]["repairing"]==true;
+  snprintf(next.yoyoStage,sizeof(next.yoyoStage),"%s",doc["yoyo"]["stage"]|"");
   next.yoyoPin=doc["yoyo"]["pin"] | 0U;
   next.autoPrintKnown=doc["auto_print"].is<bool>();next.autoPrint=doc["auto_print"] | true;
   auto focus=doc["focus"];
@@ -412,10 +416,13 @@ void sendCommand(const Command &command) {
   const State state = planter::snapshot();
   if (strcmp(state.requestId, command.id)) return; // superseded by STOP
   const bool stop = command.action == Action::StopWater;
-  const bool enabled = command.action==Action::PairYoyo ? state.yoyoEnabled : command.action==Action::AutoPrint ? state.autoPrintKnown : isFocus(command.action) ? state.focusKnown : (command.action == Action::Water || stop) ? state.pumpEnabled :
+  const bool enabled = isPairing(command.action) ? state.yoyoEnabled : command.action==Action::AutoPrint ? state.autoPrintKnown : isFocus(command.action) ? state.focusKnown : (command.action == Action::Water || stop) ? state.pumpEnabled :
                        command.action == Action::Light ? state.lightEnabled : state.printerEnabled;
   if (!enabled || (command.action == Action::Water && !state.waterAllowed) || (!stop && !planter::fresh(state, millis()))) {
     commandResult(command.id, "not_sent", "Unavailable or stale device state", false); return;
+  }
+  if(command.action==Action::RepairYoyo && (!state.yoyoRepairSupported || !state.yoyoPaired || state.yoyoLinkConnected || state.yoyoRepairing)) {
+    commandResult(command.id,"not_sent","Disconnect phone before repairing pairing",false);return;
   }
   if (command.action == Action::Print && (!strcmp(state.printerStatus, "recovery_required") ||
       (command.receipt.requiresRaster && !state.printerRaster) ||
@@ -427,6 +434,7 @@ void sendCommand(const Command &command) {
   doc["request_id"] = command.id;
   switch (command.action) {
     case Action::PairYoyo:doc["action"]="pair_yoyo";break;
+    case Action::RepairYoyo:doc["action"]="repair_yoyo";break;
     case Action::AutoPrint:doc["action"]="auto_print";doc["on"]=command.on;break;
     case Action::FocusStart:doc["action"]="focus_start";doc["duration_ms"]=uint32_t(command.focusMinutes)*60000;break;
     case Action::FocusPause:doc["action"]="focus_pause";break;
@@ -592,9 +600,9 @@ bool submit(Action action, bool lightOn, const PrintReceipt *receipt, uint16_t f
   if (action == Action::Print && (!receipt || (receipt->isDaily ? !robo::validDaily(receipt->daily) : (!receipt->text[0] || !memchr(receipt->text, 0, sizeof(receipt->text)))))) return false;
   xSemaphoreTake(lock, portMAX_DELAY);
   const bool stop = action == Action::StopWater;
-  const bool enabled = action==Action::PairYoyo ? shared.yoyoEnabled : action==Action::AutoPrint ? shared.autoPrintKnown : isFocus(action) ? shared.focusKnown : (action == Action::Water || stop) ? shared.pumpEnabled :
+  const bool enabled = isPairing(action) ? shared.yoyoEnabled : action==Action::AutoPrint ? shared.autoPrintKnown : isFocus(action) ? shared.focusKnown : (action == Action::Water || stop) ? shared.pumpEnabled :
                        action == Action::Light ? shared.lightEnabled : shared.printerEnabled;
-  if (!enabled || !shared.wifi || shared.networkRevision != device_settings::networkRevision() ||
+  if (!enabled || (action==Action::RepairYoyo && (!shared.yoyoRepairSupported || !shared.yoyoPaired || shared.yoyoLinkConnected || shared.yoyoRepairing)) || !shared.wifi || shared.networkRevision != device_settings::networkRevision() ||
       (action == Action::Water && !shared.waterAllowed) ||
       !device_settings::planterNetworkReady() || (!stop && (!fresh(shared, millis()) || shared.commandBlocked || calibrationBusy(shared.calibrationWrite) || calibrationBusy(shared.autoLightWrite))) ||
       (action == Action::Print && (!strcmp(shared.printerStatus, "recovery_required") ||

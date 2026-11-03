@@ -35,5 +35,20 @@ int main() {
   expired.disconnect();assert(!expired.allowsConnection(120001));assert(expired.remaining(120001)==0);
   assert(expired.open(120002));assert(expired.allowsConnection(120002));
   robo::BondedAccess restored;restored.restore(a);restored.connect(a);assert(restored.authenticate(a,true,0));
+  assert(!restored.beginRepair()); // Never replace a live owner's connection.
+  restored.disconnect();assert(restored.beginRepair());
+  assert(restored.paired() && restored.repairing());
+  assert(!restored.allowsConnection(20) && !restored.open(20) && !restored.enrolling(20));
+  assert(!restored.beginRepair()); // Duplicate requests cannot restart removal.
+  assert(!restored.finishRepair(false,21));
+  assert(restored.paired() && !restored.repairing() && !memcmp(restored.owner(),a,6));
+  assert(restored.beginRepair() && restored.finishRepair(true,0xfffffff0));
+  assert(!restored.paired() && !restored.repairing() && restored.remaining(16)==119968);
+  assert(!restored.finishRepair(true,17)); // A duplicate completion cannot extend the window.
+  assert(restored.remaining(17)==119967);
+  restored.connect(b);assert(!restored.authenticate(b,false,20));
+  assert(restored.authenticate(b,true,20));assert(!memcmp(restored.owner(),b,6));
+  restored.disconnect();assert(restored.beginRepair() && restored.finishRepair(true,100));
+  assert(!restored.allowsConnection(120100)); // Abandoned recovery stays closed.
   std::cout<<"Companion timer, duplicate/automatic receipts, secure enrollment: passed\n";
 }

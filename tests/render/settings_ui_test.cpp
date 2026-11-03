@@ -88,11 +88,16 @@ namespace planter {
 State fixture;
 unsigned calibrationSaves = 0;
 unsigned lightSaves=0;
+bool allowPairing=false;
+unsigned pairingRequests=0;
 robo::AutoLightSettings savedLight;
 robo::CalibrationEdit savedEdit;
 State snapshot() { return fixture; }
 bool fresh(const State &s, uint32_t) { return s.received && s.wifi; }
-bool submit(Action, bool, const PrintReceipt*, uint16_t) { throw std::runtime_error("Calibration UI must never actuate hardware"); }
+bool submit(Action action, bool, const PrintReceipt*, uint16_t) {
+  if(allowPairing && action==Action::RepairYoyo) {++pairingRequests;fixture.commandBlocked=true;return true;}
+  throw std::runtime_error("Unexpected hardware action from settings UI");
+}
 bool submitCalibration(const robo::CalibrationEdit& edit) { ++calibrationSaves; savedEdit = edit; fixture.calibrationWrite = CalibrationWrite::Queued; return true; }
 bool submitAutoLight(const robo::AutoLightSettings& settings) { ++lightSaves;savedLight=settings;fixture.autoLightWrite=CalibrationWrite::Queued;return true; }
 }
@@ -205,6 +210,21 @@ int main(int argc, char **argv) {
     settings_ui::back();tap(350,215);render();require(settings_ui::lightDraft.onBelow==1200,"Unsaved edits discarded");
     planter::fixture.autoLightPaused=true;tap(200,430);require(planter::lightSaves==2,"Explicit save resumes manual override");
     planter::fixture.autoLightWrite=planter::CalibrationWrite::Idle;
+    planter::allowPairing=true;
+    planter::fixture.yoyoEnabled=planter::fixture.yoyoPaired=planter::fixture.yoyoRepairSupported=true;
+    settings_ui::open();tap(100,420);tap(100,360);tap(200,195);
+    require(std::string(settings_ui::title())=="修复手机配对" && planter::pairingRequests==0,"Paired phone exposes confirmation without clearing its bond");
+    planter::fixture.yoyoLinkConnected=true;tap(100,420);
+    require(planter::pairingRequests==0,"Active phone link blocks repair");
+    tap(350,420);require(std::string(settings_ui::title())=="YOYO 伙伴" && planter::pairingRequests==0,"Cancelling repair preserves binding");
+    planter::fixture.yoyoLinkConnected=false;tap(200,195);tap(100,420);
+    require(planter::pairingRequests==1 && std::string(settings_ui::title())=="YOYO 伙伴","Confirmed disconnected repair submits once");
+    tap(200,195);require(planter::pairingRequests==1,"Pending repair cannot be repeated");
+    planter::fixture.commandBlocked=false;planter::fixture.yoyoRepairSupported=false;tap(200,195);
+    require(std::string(settings_ui::title())=="YOYO 伙伴","Old firmware cannot enter unsupported repair");
+    planter::fixture.yoyoRepairSupported=true;planter::fixture.received=false;tap(200,195);
+    require(std::string(settings_ui::title())=="YOYO 伙伴","Offline state cannot enter repair");
+    planter::fixture.received=true;
     if (argc > 1) {
       const std::filesystem::path output(argv[1]); std::filesystem::create_directories(output);
       for (unsigned lang = 0; lang < 2; ++lang) {
@@ -213,6 +233,10 @@ int main(int argc, char **argv) {
         networks(); settings_ui::open(); frame(output, (prefix + "settings").c_str());
         planter::fixture.receivedMs=now;tap(350,215);frame(output,(prefix+"auto-light").c_str());settings_ui::back();
         tap(100, 420); frame(output, (prefix + "planter").c_str());
+        tap(100,360);frame(output,(prefix+"yoyo-repair-entry").c_str());
+        tap(200,195);frame(output,(prefix+"yoyo-repair-confirm").c_str());
+        planter::fixture.yoyoLinkConnected=true;frame(output,(prefix+"yoyo-repair-connected").c_str());
+        planter::fixture.yoyoLinkConnected=false;settings_ui::back();settings_ui::back();
         planter::fixture.receivedMs = now;
         tap(350, 355); frame(output, (prefix + "calibration").c_str());
         tap(200, 170); frame(output, (prefix + "soil-calibration").c_str());

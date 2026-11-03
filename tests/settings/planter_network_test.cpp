@@ -126,6 +126,20 @@ int main(int argc, char **argv) {
       robo::DailyTicket ticket;StaticJsonDocument<512> json;
       CHECK(!deserializeJson(json,R"({"card":0,"reversed":0,"english":0,"species":0,"soil":-9999,"raw":-9999,"temperature":-9999,"humidity":-9999,"scene":1,"note":"a\u0000b"})"));
       CHECK(!robo::readDaily(json.as<JsonVariantConst>(),ticket));
+      settingsTestStateBody=R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"yoyo":{"enabled":true,"paired":true,"repair_supported":true,"link_connected":true,"repairing":false,"stage":"pairing_timeout"}})";
+      pollState();CHECK(planter::snapshot().yoyoRepairSupported);
+      CHECK(!strcmp(planter::snapshot().yoyoStage,"pairing_timeout"));
+      CHECK(!planter::submit(planter::Action::RepairYoyo));
+      settingsTestStateBody=R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"yoyo":{"enabled":true,"paired":true,"repair_supported":true,"link_connected":false,"repairing":false}})";
+      pollState();
+      settingsTestPostHook=[&](const String& body) {
+        StaticJsonDocument<512> repair;CHECK(!deserializeJson(repair,body));
+        CHECK(!strcmp(repair["action"]|"","repair_yoyo"));CHECK(repair.size()==2);
+      };
+      CHECK(planter::submit(planter::Action::RepairYoyo));workerOnce();CHECK(settingsTestPosts.size()==2);
+      settingsTestStateBody=R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"yoyo":{"enabled":true,"paired":true}})";
+      pollState();CHECK(!planter::snapshot().yoyoRepairSupported);
+      CHECK(!planter::submit(planter::Action::RepairYoyo));
     } else if (scenario == "sensors") {
       CHECK(planter::begin());
       settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"ambient_light":{"enabled":true,"raw":0,"valid":true},"uv":{"raw":987,"valid":true}})";

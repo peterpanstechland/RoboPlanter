@@ -28,6 +28,8 @@ struct State {
   bool sen54Enabled = false, tankEnabled = false, tankCalibrated = false;
   bool waterAllowed = false;
   bool yoyoEnabled=false, yoyoPaired=false, yoyoConnected=false, yoyoPairing=false;
+  bool yoyoLinkConnected=false, yoyoRepairSupported=false, yoyoRepairing=false;
+  char yoyoStage[32]={};
   uint32_t yoyoPin=0;
   bool autoPrintKnown=false, autoPrint=true;
   bool focusKnown = false;
@@ -59,7 +61,8 @@ struct State {
   bool commandBlocked = false, uncertain = false;
   uint32_t commandStartedMs = 0;
 };
-enum class Action : uint8_t { Water, StopWater, Light, Print, FocusStart, FocusPause, FocusResume, FocusReset, PairYoyo, AutoPrint };
+enum class Action : uint8_t { Water, StopWater, Light, Print, FocusStart, FocusPause, FocusResume, FocusReset, PairYoyo, AutoPrint, RepairYoyo };
+inline bool isPairing(Action a) {return a==Action::PairYoyo || a==Action::RepairYoyo;}
 inline bool isFocus(Action a) {return a>=Action::FocusStart && a<=Action::FocusReset;}
 bool begin();
 State snapshot();

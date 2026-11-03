@@ -106,6 +106,9 @@ const char* pairStage="idle";
 int pairDisconnectReason=-1,pairEncryptionError=0;
 uint32_t pairStarted=0;
 uint8_t currentPeer[6]={};
+uint8_t pairRepairPeer[6]={};
+robo::Result pairRepairResult;
+uint32_t pairRepairStarted=0;
 robo::BlePreparedWrite<MaxBleBytes> blePreparedWrite;
 String deviceId;
 bool sen54Detected = false;
@@ -551,6 +554,8 @@ void stateJson(JsonDocument& document) {
     Lock guard(bleMutex);
     auto yoyo=document.createNestedObject("yoyo");
     yoyo["enabled"]=bool(ROBO_ENABLE_BONDED_YOYO && companionStorage);
+    yoyo["repair_supported"]=true;
+    yoyo["repairing"]=bondAccess.repairing();
     yoyo["connect_count"]=pairConnections;
     yoyo["security_requests"]=pairRequests;
     yoyo["pin_notifications"]=pairNotifications;
@@ -802,6 +807,29 @@ void httpDiagnosticSession() {
   sendJson(ok?200:400,out);
 }
 
+// Called under bleMutex after the stack confirms deletion (or no key exists).
+void finishPairRepair(bool removed) {
+  if(!bondAccess.repairing())return;
+  const bool stored=removed && (!companionPrefs.isKey("phone") || companionPrefs.remove("phone"));
+  if(bondAccess.finishRepair(stored,millis())) {
+    pairPin=100000+esp_random()%900000;
+    bondSecurity.setStaticPIN(pairPin);
+    pairStage="ready";pairAuthMode=pairFailure=-1;pairStackSuccess=false;
+    pairRepairResult.ok=true;pairRepairResult.status="completed";pairRepairResult.error="";
+  } else {
+    pairStage="repair_failed";
+    pairRepairResult.ok=false;pairRepairResult.status="failed";
+    pairRepairResult.error=removed?"pair_storage_failed":"pair_key_remove_failed";
+  }
+}
+
+void pairGapEvent(esp_gap_ble_cb_event_t event,esp_ble_gap_cb_param_t* param) {
+  if(event!=ESP_GAP_BLE_REMOVE_BOND_DEV_COMPLETE_EVT)return;
+  Lock guard(bleMutex);
+  if(bondAccess.repairing() && !memcmp(pairRepairPeer,param->remove_bond_dev_cmpl.bd_addr,6))
+    finishPairRepair(param->remove_bond_dev_cmpl.status==ESP_BT_STATUS_SUCCESS);
+}
+
 void httpCommand() {
   if (!httpAuthorized()) return;
   if (http.header("Content-Type").indexOf("application/json") != 0) {
@@ -854,6 +882,34 @@ void httpCommand() {
   if (command.hasEffect && !jsonString(object["effect"], command.effect)) {
     sendError(400, "invalid_light_fields"); return;
   }
+  if(command.action=="repair_yoyo") {
+    if(object.size()!=2){sendError(400,"unexpected_fields",command.requestId.c_str());return;}
+    bool start=false;
+    robo::Result result;result.requestId=command.requestId;result.status="rejected";result.error="pairing_unavailable";
+    {
+      Lock guard(bleMutex);
+      if(pairRepairResult.requestId==command.requestId)result=pairRepairResult;
+      else if(ROBO_ENABLE_BONDED_YOYO && companionStorage && bondAccess.beginRepair()) {
+        memcpy(pairRepairPeer,bondAccess.owner(),6);
+        pairRepairStarted=millis();pairStage="repairing";
+        result.ok=true;result.status="accepted";result.error="";pairRepairResult=result;start=true;
+      } else if(bondAccess.connected()) result.error="phone_link_active";
+    }
+    if(start) {
+      int count=esp_ble_get_bond_device_num();
+      bool found=false,valid=count>=0;
+      if(count>0) {
+        std::vector<esp_ble_bond_dev_t> devices(static_cast<size_t>(count));
+        valid=esp_ble_get_bond_device_list(&count,devices.data())==ESP_OK;
+        if(valid)for(int i=0;i<count;++i)if(!memcmp(pairRepairPeer,devices[i].bd_addr,6))found=true;
+      }
+      if(!valid || !found) {Lock guard(bleMutex);finishPairRepair(valid);}
+      else if(esp_ble_remove_bond_device(pairRepairPeer)!=ESP_OK) {Lock guard(bleMutex);finishPairRepair(false);}
+      {Lock guard(bleMutex);result=pairRepairResult;}
+    }
+    StaticJsonDocument<384> output;resultJson(output,result);
+    sendJson(result.ok?(result.status=="accepted"?202:200):409,output);return;
+  }
   if(command.action=="pair_yoyo") {
     if(object.size()!=2){sendError(400,"unexpected_fields",command.requestId.c_str());return;}
     bool opened=false;
@@ -887,6 +943,12 @@ void httpResult() {
   const std::string requestId = http.arg("request_id").c_str();
   if (!robo::validId(requestId)) {
     sendError(400, "invalid_request_id"); return;
+  }
+  {
+    Lock guard(bleMutex);
+    if(pairRepairResult.requestId==requestId) {
+      StaticJsonDocument<384> output;resultJson(output,pairRepairResult);sendJson(200,output);return;
+    }
   }
   robo::Result result;
   bool found;
@@ -1322,6 +1384,7 @@ void setup() {
     {Lock guard(coreMutex);controller.restoreAutoPrint(companionPrefs.getBool("auto-print",true));}
   }
   BLEDevice::init(deviceId.c_str());
+  BLEDevice::setCustomGapHandler(pairGapEvent);
   if(ROBO_ENABLE_BONDED_YOYO) {
     BLEDevice::setSecurityCallbacks(new PairCallbacks());
     bondSecurity.setCapability(ESP_IO_CAP_OUT);
@@ -1356,6 +1419,15 @@ void setup() {
 }
 
 void loop() {
+  {
+    Lock guard(bleMutex);
+    if(bondAccess.repairing() && pairRepairResult.status=="accepted" && uint32_t(millis()-pairRepairStarted)>10000) {
+      // A late remove callback may still complete recovery. Do not admit any
+      // phone while key deletion has an unknown outcome.
+      pairStage="repair_restart_required";pairRepairResult.ok=false;
+      pairRepairResult.status="failed";pairRepairResult.error="pair_repair_timeout";
+    }
+  }
   static uint32_t lastNetworkLog=0;
   if (millis()-lastNetworkLog>=5000) {
     lastNetworkLog=millis();
