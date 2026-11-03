@@ -26,10 +26,12 @@
 
 | 固件 | SHA256 | 大小 |
 | --- | --- | --- |
-| XIAO 配对恢复版 | `81449d17e6d74e7a471be2bc3e564b65cc71e6bdb20b890c85b71c2aa3396d76` | 2,394,800 字节 |
+| XIAO 配对恢复首版 | `81449d17e6d74e7a471be2bc3e564b65cc71e6bdb20b890c85b71c2aa3396d76` | 2,394,800 字节 |
 | Indicator 配对恢复版 | `778c6e44530f884e911cdcdcc0b5378c14c9eb9a40fae874624f756e162e1050` | 2,443,600 字节 |
 
 本机回退文件分别位于 `build/device-backups/xiao-20261103-pairing-repair/` 和 `build/device-backups/indicator-20261103-pairing-repair/`；包含私有数据，不提交到 Git。原应用为各目录的 `previous-app.bin`，新应用为 `repair-app.bin`。控制核心、网络设置回归均通过，配对相关客户端34项检查、设置界面89项检查通过；中英文恢复确认页已渲染检查。
+
+首轮真机恢复已成功清除旧登记并显示新码，但手机验证码认证后返回 `auth_mode=12`（SC+MITM，无 bonding 标志），被端侧正确拒绝。查明 Arduino `BLESecurity::setStaticPIN()` 内部会将认证模式改为 `SC_ONLY`；恢复首版漏掉了原首次配对路径随后执行的模式恢复。现将两条路径统一为 `preparePairPin()`，每次设置 PIN 后显式恢复 SC+MITM+bonding，端侧验证强度未放宽。修订镜像 SHA256 为 `bb5a3cce6a597d9e03f67fb3410fdd9318c99e3eb1a933001a30b1ea5d8e1f16`，2,394,800 字节，本机目录 `build/device-backups/xiao-20261103-pairing-repair-bond/`。修订版已重新编译、刷入并校验一致，联网和有效传感器数据恢复；手机认证与打印仍待实测记录。
 
 ## 关于新引入的配对码
 

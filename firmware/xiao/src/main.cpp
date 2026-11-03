@@ -807,13 +807,21 @@ void httpDiagnosticSession() {
   sendJson(ok?200:400,out);
 }
 
+// Arduino setStaticPIN() silently changes authentication to SC_ONLY.
+// Restore MITM + persistent bonding afterwards for both enrollment paths.
+void preparePairPin() {
+  pairPin=100000+esp_random()%900000;
+  bondSecurity.setStaticPIN(pairPin);
+  bondSecurity.setCapability(ESP_IO_CAP_OUT);
+  bondSecurity.setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+}
+
 // Called under bleMutex after the stack confirms deletion (or no key exists).
 void finishPairRepair(bool removed) {
   if(!bondAccess.repairing())return;
   const bool stored=removed && (!companionPrefs.isKey("phone") || companionPrefs.remove("phone"));
   if(bondAccess.finishRepair(stored,millis())) {
-    pairPin=100000+esp_random()%900000;
-    bondSecurity.setStaticPIN(pairPin);
+    preparePairPin();
     pairStage="ready";pairAuthMode=pairFailure=-1;pairStackSuccess=false;
     pairRepairResult.ok=true;pairRepairResult.status="completed";pairRepairResult.error="";
   } else {
@@ -919,10 +927,7 @@ void httpCommand() {
         // A repeated request must not rotate the PIN during phone input.
         opened=true;
       } else if(ROBO_ENABLE_BONDED_YOYO && companionStorage && bondAccess.open(millis())) {
-        pairPin=100000+esp_random()%900000;
-        bondSecurity.setStaticPIN(pairPin);
-        bondSecurity.setCapability(ESP_IO_CAP_OUT);
-        bondSecurity.setAuthenticationMode(ESP_LE_AUTH_REQ_SC_MITM_BOND);
+        preparePairPin();
         pairStage="ready";
         pairAuthMode=pairFailure=-1;pairStackSuccess=false;
         opened=true;
