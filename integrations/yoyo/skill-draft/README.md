@@ -14,7 +14,7 @@
 | --- | --- |
 | Slug / 技能名称 | `roboplanter-workmate` |
 | 展示名称 | `RoboPlanter工位小芽` |
-| 版本 / 环境 | `1.0.0` / Android |
+| 源码版本 / 环境 | `1.0.1` / Android（最近发布记录：1.0.0已上架，1.0.1审核中） |
 | 新 Skill ID | `96fbbd3c7947445f836919c40d33add0` |
 | 头像 | `../assets/roboplanter-160.png` |
 | 引导示例 | `你好，小芽`；`读取工位状态` |

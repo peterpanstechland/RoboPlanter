@@ -6,20 +6,20 @@
 
 [项目手册](https://peterpanstechland.github.io/docs/projects/2026/roboplanter/) · [互动展示与三维接线](https://peterpanstechland.github.io/roboplanter/#wiring-lab) · [最新接线总表](docs/wiring.md) · [YOYO 使用指南](docs/handbook/yoyo-companion.md)
 
-## 当前状态 · 2026-10-29
+## 当前状态 · 2026-11-03
 
 | 功能 | 真实验收状态 |
 | --- | --- |
-| YOYO Skill 0.4.0 | 已私有上架；手机加密配对成功，“读取工位状态”返回土壤、温度、湿度 |
-| 环境采集 | SEN54 温湿度/PM2.5/VOC、环境光、超声波距离与 Indicator 土壤上传已联调 |
+| YOYO Skill | 新入口“RoboPlanter工位小芽”1.0.0 私有上架且问候通过；源码 1.0.1 改为读取校准土壤百分比，最近记录为私有审核中。旧入口实时读取已验收，新版手机调用继续复验 |
+| 环境采集 | SEN54 温湿度/PM2.5/VOC、环境光与 Indicator 土壤上传已联调；超声波曾通过，11月3日再次无读数，当前排障中 |
 | 小票 | 中文、Logo、状态、三行待办、78张塔罗正逆位；128行图像比例正常，七页预览与实印一致，自动切纸通过 |
 | 灯带 | WS2813，30颗、亮度24/255；Indicator触发绿→白→绿及屏幕触摸已实测通过；在线绿灯、白色补光 |
 | 番茄钟 | 主控共享计时，设备接口开始/暂停/继续/结束已验证；手机控制和蜂鸣器听音待验收 |
 | 场景日签 | 打卡/午饭/会议/休息/低电量；默认自动打印，可持久关闭。设备侧会议小票已出纸，手机场景调用待验收 |
-| 水箱与水泵 | 距离测量、继电器空载300ms吸合后释放已验证；水箱未完成，负载端空着，浇水禁用 |
+| 水箱与水泵 | 水箱标定与一次0.5秒出水后停泵已由用户确认；当前超声波异常，水位保护禁止浇水。Skill尚未开放语音启动浇水 |
 | 设备设置 | 中英文、亮度、Wi-Fi保存；植物养成、换主题、触摸及双缓冲显示已验收 |
 
-最新源码还包含更明确的“显示六位配对码”提示和大字号配对码，已编译但尚未再次刷入；不能据源码或文档更新认定设备已运行这版界面。历史版本、固件哈希与待测项目见[进度与证据](docs/handbook/roadmap-evidence.md)。
+配对修复与30颗灯带版已刷入并通过相应现场反馈。最新排障程序只用于定位超声波信号故障，不代表问题已修复。历史版本与固件哈希见[超声波排障记录](docs/deployment/ultrasonic-diagnostics-20261103.md)和[平台状态](docs/deployment/honor-platform-status.md)。
 
 ## 连接关系
 
@@ -32,7 +32,7 @@ Indicator D1 ── 同一2.4GHz路由器 / 鉴权HTTP ─────┘
 
 两块板分别USB/5V供电，无需互接UART或I²C。首次手机配对在 Indicator 的“设置 → 花盆连接 → YOYO 与场景小票 → 开启两分钟配对”查看六位码。正常绑定后的重连无需重新输入；重启重连仍待完整实测。BLE 不在技能文件存放令牌；HTTP 使用本地私有配置。
 
-当前外设分配：SEN54接IIC、独立5V且信号3.3V；SERVO1为继电器GPIO42，SERVO2为超声波GPIO8，SERVO3为环境光GPIO1，SERVO4为打印TX GPIO7，打印返回接原UART RX GPIO44；RGB为灯带GPIO40。土壤在Indicator GPIO27。**M2不使用，GPIO43不接打印机，继电器负载端仍留空。** 逐线供电和插座编号见[接线总表](docs/wiring.md)。
+稳定功能的外设分配：SEN54接IIC、独立5V且信号3.3V；SERVO1为继电器GPIO42，SERVO3为环境光GPIO1，RGB为灯带GPIO40，土壤在Indicator GPIO27。打印机已改为 XIAO 直连 BLE，原 TTL 断开。超声波原用SERVO2/GPIO8，后改SERVO4/GPIO7对照；当前黄线已断开做空载排查，GPIO44仅准备替代检查，尚未启用。**M2不使用，GPIO43不接打印机。** 恢复接线前以[接线总表](docs/wiring.md)的当日排障状态为准。
 
 SEN54已取代DHT20和旧Air Quality；UV已换成Light v1.2。SEN54不提供CO₂或NOx。土壤未标定只报告原始值，超声波未标定只报告距离，游戏血条不代表真实植物健康。
 

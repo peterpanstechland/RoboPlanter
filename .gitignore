@@ -16,6 +16,7 @@ firmware/indicator/assets/photos/
 !.env.example
 tmp/
 build/
+/output/
 *.obj
 *.pdb
 *.ilk
