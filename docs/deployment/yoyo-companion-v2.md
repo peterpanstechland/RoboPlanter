@@ -1,6 +1,6 @@
 # YOYO 0.4 工位交互联调记录
 
-更新：2026-10-29。此记录区分设备侧验收、平台发布与手机端验收；三者不能互相替代。
+更新：2026-11-03。此记录区分设备侧验收、平台发布与手机端验收；三者不能互相替代。10月29日的固件与验收记录为历史基线，当前配对恢复固件见下方11月3日记录。
 
 ## 当前结果
 
@@ -31,9 +31,11 @@
 
 本机回退文件分别位于 `build/device-backups/xiao-20261103-pairing-repair/` 和 `build/device-backups/indicator-20261103-pairing-repair/`；包含私有数据，不提交到 Git。原应用为各目录的 `previous-app.bin`，新应用为 `repair-app.bin`。控制核心、网络设置回归均通过，配对相关客户端34项检查、设置界面89项检查通过；中英文恢复确认页已渲染检查。
 
-首轮真机恢复已成功清除旧登记并显示新码，但手机验证码认证后返回 `auth_mode=12`（SC+MITM，无 bonding 标志），被端侧正确拒绝。查明 Arduino `BLESecurity::setStaticPIN()` 内部会将认证模式改为 `SC_ONLY`；恢复首版漏掉了原首次配对路径随后执行的模式恢复。现将两条路径统一为 `preparePairPin()`，每次设置 PIN 后显式恢复 SC+MITM+bonding，端侧验证强度未放宽。修订镜像 SHA256 为 `bb5a3cce6a597d9e03f67fb3410fdd9318c99e3eb1a933001a30b1ea5d8e1f16`，2,394,800 字节，本机目录 `build/device-backups/xiao-20261103-pairing-repair-bond/`。修订版已重新编译、刷入并校验一致，联网和有效传感器数据恢复；手机认证与打印仍待实测记录。
+首轮真机恢复已成功清除旧登记并显示新码，但手机验证码认证后返回 `auth_mode=12`（SC+MITM，无 bonding 标志），被端侧正确拒绝。查明 Arduino `BLESecurity::setStaticPIN()` 内部会将认证模式改为 `SC_ONLY`；恢复首版漏掉了原首次配对路径随后执行的模式恢复。现将两条路径统一为 `preparePairPin()`，每次设置 PIN 后显式恢复 SC+MITM+bonding，端侧验证强度未放宽。修订镜像 SHA256 为 `bb5a3cce6a597d9e03f67fb3410fdd9318c99e3eb1a933001a30b1ea5d8e1f16`，2,394,800 字节，本机目录 `build/device-backups/xiao-20261103-pairing-repair-bond/`。修订版已重新编译、刷入并校验一致，联网和有效传感器数据恢复，随后开展以下手机认证实测。
 
-## 关于新引入的配对码
+2026-11-03 16:12（北京时间）修订版真机认证通过：此前检查时窗口已过期，但电脑仍能扫描到 RoboPlanter-A994 及正确服务 UUID，RSSI 为 -42 dBm。重新开启窗口后，主控记录 `waiting_for_pin`，随后 `authenticated`、`auth_mode=13`、`failure_reason=0`、`stack_success=true`、`paired=true`、`connected=true`，确认加密认证和应用端手机绑定登记成功。本轮没有继续刷写或清除绑定；新 Skill 的数据读取、语音打印及跨重启重连仍需分别验收。
+
+## 关于新引入的配对码（10月29日记录）
 
 首次系统配对是本次实现的设计选择，不是荣耀官方强制要求。目的在于不再把设备长期令牌或旧一次性凭据写进 Skill；不是要求每次对话都输入密码。
 
