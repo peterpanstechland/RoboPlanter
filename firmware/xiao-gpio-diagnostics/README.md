@@ -6,6 +6,8 @@
 
 当 XIAO 已从底板拔下、仅 USB 供电且所有排针悬空时，还可使用 `TEST_D3_EMPTY` 对 GPIO4 作空载参照，以及 `PROBE_BARE_I2C` 对 GPIO5/6 上的 0x38、0x44、0x69、0x6a 作空地址应答检查。I²C 检查不写入传感器命令，结束后 GPIO5/6 恢复为输入。这两个扩展命令不能在未确认外设接线时使用。
 
+`TEST_D7_EMPTY` 可检查空闲的 D7 / GPIO44（原 UART RX）。同样要求该信号针无外部连接；这是寻找替代测距引脚的空载检查，不会自动更改正式固件的引脚配置。诊断使用 USB CDC 串口，不使用 GPIO43/44 作串口通信。
+
 日志的 `input` 是输入读回，`latch` 是输出寄存器位，`output_enabled` 是输出使能位；`mux` / `route` 保留引脚复用和矩阵选择，辅助区分配置错误和电气问题。IDF 路径还解除该引脚的 hold。输出寄存器为 1 而输入为 0 并不单独证明芯片损坏，仍需隔离 Robot Board 和外部线路后判断。
 
 构建：`pio run -d firmware/xiao-gpio-diagnostics`。刷写前核对设备 MAC、分区和当前应用，备份 NVS。只将诊断应用写到 `0x10000`；完成后恢复原正式应用并核验，不使用擦除整片 Flash 的方式。

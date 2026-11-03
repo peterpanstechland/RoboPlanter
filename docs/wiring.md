@@ -2,7 +2,7 @@
 
 适用实物：**XIAO ESP32-S3 Plus + XIAO Robot Board V1.0、SenseCAP Indicator D1**，不是 XIAO Sense。本页替代早期 I²C 水位、GPIO43 打印和 SERVO4 水泵方案。[三维接线小工坊](https://peterpanstechland.github.io/roboplanter/#wiring-lab)使用同一版分配。
 
-**2026-11-03 临时排障接线：**当前台架的超声波黄线已从 SERVO2/D9/GPIO8 移到空闲 SERVO4/J14 pin1/D8/GPIO7；红线仍为独立 3.3V，黑线共地。现场固件设置 `ROBO_ULTRASONIC_GPIO=7`，打印机走 BLE，TTL 线已断开。下方基线表和三维示意的 SERVO2 分配不能直接用于这份排障固件；测距尚未恢复，见[超声波排障记录](deployment/ultrasonic-diagnostics-20261103.md)。
+**2026-11-03 临时排障状态：**超声波曾由 SERVO2/D9/GPIO8 改接 SERVO4/J14 pin1/D8/GPIO7；为做空载对照，随后已拔下黄线，用户报告 XIAO 也已与底板分离。当前保留的正式应用仍设置 `ROBO_ULTRASONIC_GPIO=7`，打印机使用 BLE、TTL 断开。D7/GPIO44 仅在准备替代引脚检查，尚未成为实际接线方案。下方基线表和三维示意的 SERVO2 分配不能直接用于这份排障固件；测距尚未恢复，见[超声波排障记录](deployment/ultrasonic-diagnostics-20261103.md)。
 
 ## 硬件认图
 

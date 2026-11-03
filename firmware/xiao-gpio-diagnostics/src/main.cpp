@@ -11,16 +11,18 @@ size_t commandLength = 0;
 bool commandOverflow = false;
 
 void snapshot(gpio_num_t pin, const char* mode, const char* phase, int err) {
-  const uint32_t mask = 1UL << pin;
+  const uint64_t mask = 1ULL << pin;
+  const uint64_t output = (uint64_t(GPIO.out1.val) << 32) | GPIO.out;
+  const uint64_t enabled = (uint64_t(GPIO.enable1.val) << 32) | GPIO.enable;
   Serial.printf("GPIO_TEST gpio=%d mode=%s phase=%s err=%d input=%d latch=%u output_enabled=%u mux=0x%08lx route=0x%08lx\n",
-    int(pin), mode, phase, err, gpio_get_level(pin), unsigned(bool(GPIO.out & mask)),
-    unsigned(bool(GPIO.enable & mask)),
+    int(pin), mode, phase, err, gpio_get_level(pin), unsigned(bool(output & mask)),
+    unsigned(bool(enabled & mask)),
     static_cast<unsigned long>(REG_READ(GPIO_PIN_MUX_REG[pin])),
     static_cast<unsigned long>(GPIO.func_out_sel_cfg[pin].val));
 }
 
 void pulse(gpio_num_t pin, bool native) {
-  const uint32_t mask = 1UL << pin;
+  const uint64_t mask = 1ULL << pin;
   const char* mode = native ? "idf" : "arduino";
   int configError = ESP_OK;
   if (native) {
@@ -41,8 +43,8 @@ void pulse(gpio_num_t pin, bool native) {
   const int writeError = native ? gpio_set_level(pin, 1) : (digitalWrite(pin, HIGH), ESP_OK);
   delay(5);
   const int input = gpio_get_level(pin);
-  const bool latch = GPIO.out & mask;
-  const bool enabled = GPIO.enable & mask;
+  const bool latch = (((uint64_t(GPIO.out1.val) << 32) | GPIO.out) & mask) != 0;
+  const bool enabled = (((uint64_t(GPIO.enable1.val) << 32) | GPIO.enable) & mask) != 0;
   const uint32_t mux = REG_READ(GPIO_PIN_MUX_REG[pin]);
   const uint32_t route = GPIO.func_out_sel_cfg[pin].val;
   gpio_set_level(pin, 0);
@@ -57,8 +59,9 @@ void pulse(gpio_num_t pin, bool native) {
 void runCommand() {
   command[commandLength] = 0;
   if (!commandOverflow && (strcmp(command, "TEST_D8_EMPTY") == 0 || strcmp(command, "TEST_D9_EMPTY") == 0 ||
-                          strcmp(command, "TEST_D3_EMPTY") == 0)) {
-    const gpio_num_t pin = command[6] == '8' ? GPIO_NUM_7 : command[6] == '9' ? GPIO_NUM_8 : GPIO_NUM_4;
+                          strcmp(command, "TEST_D3_EMPTY") == 0 || strcmp(command, "TEST_D7_EMPTY") == 0)) {
+    const gpio_num_t pin = command[6] == '8' ? GPIO_NUM_7 : command[6] == '9' ? GPIO_NUM_8 :
+                          command[6] == '7' ? GPIO_NUM_44 : GPIO_NUM_4;
     pulse(pin, false);
     pulse(pin, true);
     Serial.println("GPIO_TEST complete; tested pin released to input");
