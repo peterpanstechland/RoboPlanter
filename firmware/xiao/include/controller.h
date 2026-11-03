@@ -201,13 +201,14 @@ class Controller {
     return config_.tankRequired ? tank_.error(now) : "";
   }
 
-  void finishPrint(const std::string& requestId, bool success) {
+  void finishPrint(const std::string& requestId, bool success, bool mayHaveWritten = true,
+                   const char* error = "printer_write_failed") {
     printerBusy_ = false;
     // A partial GS v 0 leaves the device waiting for raster bytes. No new job
     // may follow until both printer and controller are restarted/recovered.
-    if (!success) printerRecoveryRequired_ = true;
-    printerStatus_ = printerRecoveryRequired_ ? "recovery_required" : "bytes_sent";
-    finish(requestId, success, success ? "" : "printer_write_failed");
+    if (!success && mayHaveWritten) printerRecoveryRequired_ = true;
+    printerStatus_ = printerRecoveryRequired_ ? "recovery_required" : success ? "bytes_sent" : "idle";
+    finish(requestId, success, success ? "" : error);
   }
 
   uint32_t remainingMs(uint32_t now) const {

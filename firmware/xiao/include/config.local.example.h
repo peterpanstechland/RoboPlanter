@@ -53,3 +53,6 @@
 #define ROBO_PRINTER_CUTTER_CONFIRMED 0 // Confirm an autocutter: ESC d 6, then GS V 0.
 // Printer TX -> J10 RX/GPIO44 only after confirming 3.3V logic or level shifting.
 #define ROBO_PRINTER_BAUD 9600
+#define ROBO_PRINTER_BLE 0 // 1 routes all print requests to the configured BLE printer instead of UART.
+#define ROBO_PRINTER_BLE_ADDRESS "00:00:00:00:00:00" // Set the verified printer address locally.
+#define ROBO_PRINTER_BLE_ADDRESS_TYPE 0 // Public (0) or random (1); do not guess a nearby device.

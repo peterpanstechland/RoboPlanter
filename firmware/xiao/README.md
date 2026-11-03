@@ -1,8 +1,10 @@
 # RoboPlanter XIAO firmware
 
-Current bench and pin allocation: [hardware wiring](../../docs/wiring.md). Bonded BLE pairing and YOYO soil/temperature/humidity reads passed on2026-10-29. Phone actions remain pending; pump load is disconnected. New pairing-code UI/diagnostic source changes are compiled but not reflashed.
+Current bench and pin allocation: [hardware wiring](../../docs/wiring.md). Bonded BLE pairing and YOYO soil/temperature/humidity reads passed on 2026-10-29. Current BLE printer commissioning and physical results are recorded in the [printer guide](../../docs/handbook/uart-printer.md).
 
 Standalone firmware for the supplied **XIAO ESP32-S3 Plus + XIAO Robot Board V1.0**. It does not run or reuse the original car control loop. It provides authenticated HTTP and Bluetooth commands, actual optional sensor measurements, an independently timed external pump output, WS2812 control, and optional UART text transmission.
+
+Optional BLE printer transport (2026-11-03): set `ROBO_PRINTER_BLE=1` with the verified `ROBO_PRINTER_BLE_ADDRESS` and address type in private configuration. Indicator HTTP requests and YOYO's existing bonded BLE commands then share the same print queue and renderer, with a separate GATT client writing the printer's `18F0/2AF1` characteristic. The default remains UART. The printer connection never enrolls as the phone, and no UART fallback or automatic receipt replay occurs. See the [printer guide](../../docs/handbook/uart-printer.md#indicator--yoyo-经-xiao-蓝牙打印) for timeouts, status fields, recovery, and current physical acceptance results.
 
 The supplied configuration disables **all sensors and actuators**. Disabled measurements are `null` with `valid:false`; the firmware does not invent readings. Actions also remain disabled until both `ROBO_ENABLE_ACTIONS=1` and a nondefault 16–64 character device token are configured. A compiled binary is not evidence that the connected hardware has been tested.
 

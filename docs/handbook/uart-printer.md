@@ -123,7 +123,26 @@ cl /std:c++17 /EHsc /utf-8 /O2 /I"firmware/xiao/.pio/libdeps/xiao_robot_board/Ar
 build/encode_daily_receipt.exe build/ticket.json build/receipt.bin
 ```
 
-目前这是一条 **电脑 → BLE → 打印机** 的应急路径。XIAO 固件仍使用 UART，尚未把 YOYO 或 Indicator 的打印请求切换到 BLE。ESP32-S3 支持 BLE，后续直接接入时仍需验证与 YOYO 现有 BLE 服务并行、断连处理和长票发送。
+上述验收对应 **电脑 → BLE → 打印机**。XIAO 直连新增如下可选配置；它有独立的真机验收，不能用电脑的打印成功替代。
+
+### Indicator / YOYO 经 XIAO 蓝牙打印
+
+```mermaid
+flowchart LR
+  I[Indicator 小票预览与确认] -->|原有 Wi-Fi / HTTP| X[XIAO 打印队列]
+  Y[Robot Phone / YOYO Skill] -->|原有加密 BLE 指令| X
+  X -->|BLE 18F0 / 2AF1| P[EM5826H 打印与切纸]
+```
+
+在 XIAO 私有 `config.local.h` 保留既有传感器、灯带、Wi-Fi 和设备令牌，仅增加 `ROBO_PRINTER_BLE=1`、`ROBO_PRINTER_BLE_ADDRESS`（实机蓝牙地址）和 `ROBO_PRINTER_BLE_ADDRESS_TYPE`（0 为公开地址，1 为随机地址）。公共默认仍为 UART；启用 BLE 后不初始化打印 UART，也不向旧 D8 线路发送小票。打印机保持独立供电、蓝牙开启，打印机 USB/TTL 断开，电脑或其他客户端退出连接。
+
+两种入口仍走同一打印队列和同一日签点阵，保持预览冻结、请求去重、128 行光栅和切纸指令。手机仍与 **RoboPlanter** 配对，不需要改配打印机；打印机的客户端连接与手机命令连接分开处理，不更改手机绑定或加密要求。实现使用 [Espressif GATT Client API](https://docs.espressif.com/projects/esp-idf/en/v4.4.8/esp32s3/api-reference/bluetooth/esp_gattc.html)，并复用既有 Arduino BLE 事件分发。
+
+首次打印按已配置地址连接并验证服务，只向 `18F0/2AF1` 的无响应写特征发送。每包最多 224 字节、速率上限 9,600 字节/秒；连接等待最多 30 秒、发送等待最多 45 秒。成功后保留连接供下一张使用。新状态字段 `printer.transport`、`link_connected`、`link_ready`、`link_phase`、`link_error`、`mtu`、`bytes_sent`、`send_elapsed_ms` 用于区分配置、连接和发送结果，均不代表纸张或切刀的机械反馈。
+
+完全未发送字节的连接失败会返回 `printer_ble_*` 错误，并允许用户排除问题后明确发起新请求；原请求不会重放。已开始发送的失败进入 `recovery_required`，不能自动换串口、重新连接重发或换请求号偷偷重印。Indicator 的原有确认入口与 100 秒结果查询窗口可继续使用，手机 `A:id` 仍只代表受理，`D:id` 只代表发送完成。
+
+2026-11-03 新增固件已通过编译和离线控制测试，只更新 XIAO 应用分区并保留既有配对、Wi-Fi 和校准。XIAO 已直接连接打印机，MTU 240；12,312 字节中文短票发送约 2.283 秒（含 1 秒结束等待），用户确认内容完整、比例正常、自动切纸。Indicator 完整日签及 YOYO 入口仍待逐项实物验收。
 
 ## 打印后检查
 

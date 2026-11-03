@@ -224,6 +224,18 @@ void lightEffectCommands() {
 }
 
 void printerAndCalibration() {
+  robo::Controller wireless(enabled());
+  const auto offline = print("offline", "No connection");
+  CHECK(wireless.submit(offline, 0).status == "accepted");
+  wireless.finishPrint("offline", false, false, "printer_ble_unavailable");
+  CHECK(!wireless.printerBusy());
+  CHECK(std::string(wireless.printerStatus()) == "idle");
+  CHECK(wireless.submit(offline, 1).duplicate);
+  CHECK(wireless.submit(offline, 1).error == "printer_ble_unavailable");
+  CHECK(wireless.submit(print("manual-new", "Try after enabling Bluetooth"), 2).ok);
+  wireless.finishPrint("manual-new", false, true, "printer_ble_disconnected");
+  CHECK(std::string(wireless.printerStatus()) == "recovery_required");
+  CHECK(wireless.submit(print("after-partial", "Do not print"), 3).error == "printer_recovery_required");
   robo::Controller c(enabled());
   CHECK(c.submit(print("escape", std::string("x\x1b") + "@"), 0).error == "invalid_print_text");
   CHECK(c.submit(print("empty", ""), 0).error == "invalid_print_text");

@@ -26,6 +26,7 @@
 #include "printer_transport.h"
 #include "ble_session.h"
 #include "robo_config.h"
+#include "ble_printer.h"
 #include "remote_soil.h"
 #include "diagnostic_read_session.h"
 #include "dht20.h"
@@ -379,6 +380,22 @@ void printerTask(void*) {
   PrintJob job;
   for (;;) {
     if (xQueueReceive(printQueue, &job, portMAX_DELAY) != pdTRUE) continue;
+#if ROBO_PRINTER_BLE
+    bool success = ROBO_ENABLE_PRINTER && printer_ble::startJob();
+    if (success) success = job.calibration ? robo::writePrinterCalibration(printer_ble::writeByte, ROBO_PRINTER_CUTTER_CONFIRMED) :
+      job.isDaily ? robo::writeDailyReceipt(job.daily, printer_ble::writeByte, ROBO_PRINTER_CUTTER_CONFIRMED) :
+      robo::writeReceipt(job.text, printer_ble::writeByte, ROBO_PRINTER_CUTTER_CONFIRMED);
+    if (success) success = printer_ble::finishJob();
+    if (!success) printer_ble::abortJob();
+    const auto transport = printer_ble::snapshot();
+    Serial.printf("Printer BLE job=%s ok=%d bytes=%lu elapsed_ms=%lu error=%s\n", job.id, success,
+      static_cast<unsigned long>(transport.bytes), static_cast<unsigned long>(transport.elapsedMs), transport.error);
+    {
+      Lock guard(coreMutex);
+      controller.finishPrint(job.id, success, transport.bytes > 0,
+        *transport.error ? transport.error : "printer_ble_write_failed");
+    }
+#else
     const uint32_t started = millis();
     const uint32_t budget = robo::printerTransmitBudgetMs(
         job.calibration ? robo::CalibrationWireBytes : job.isDaily ? robo::DailyReceiptBytes+6 : robo::plannedReceiptBytes(job.text, ROBO_PRINTER_CUTTER_CONFIRMED), ROBO_PRINTER_BAUD);
@@ -408,6 +425,7 @@ void printerTask(void*) {
       Lock guard(coreMutex);
       controller.finishPrint(job.id, success);
     }
+#endif
   }
 }
 
@@ -587,6 +605,19 @@ void stateJson(JsonDocument& document) {
   printer["daily_layout"] = robo::DailyLayoutVersion;
   printer["paper_width_dots"] = 384;
   printer["autocut"] = static_cast<bool>(ROBO_PRINTER_CUTTER_CONFIRMED);
+#if ROBO_PRINTER_BLE
+  const auto printerLink = printer_ble::snapshot();
+  printer["transport"] = "ble";
+  printer["link_connected"] = printerLink.connected;
+  printer["link_ready"] = printerLink.ready;
+  printer["link_phase"] = printerLink.phase;
+  printer["link_error"] = printerLink.error;
+  printer["mtu"] = printerLink.mtu;
+  printer["bytes_sent"] = printerLink.bytes;
+  printer["send_elapsed_ms"] = printerLink.elapsedMs;
+#else
+  printer["transport"] = "uart";
+#endif
   // The sample documents transport/cutter commands, not a status response.
   // Do not report paper, blade or physical completion from a UART write.
   printer["feedback"] = "unavailable";
@@ -894,7 +925,7 @@ const char* shortError(const std::string& error) {
   if (error == "request_id_conflict") return "ID";
   if (error == "idempotency_cache_full") return "FULL";
   if (error == "invalid_duration") return "TIME";
-  if (error == "printer_write_failed" || error == "printer_recovery_required") return "IO";
+  if (error == "printer_write_failed" || error == "printer_recovery_required" || error.find("printer_ble_") == 0) return "IO";
   if (error == "unknown_action") return "ACT";
   return "ARG";
 }
@@ -1089,6 +1120,10 @@ class PairCallbacks : public BLESecurityCallbacks {
   bool onConfirmPIN(uint32_t) override {return false;}
   bool onSecurityRequest() override {Lock guard(bleMutex);++pairRequests;return companionStorage && bondAccess.mayPair(millis());}
   void onAuthenticationComplete(esp_ble_auth_cmpl_t result) override {
+#if ROBO_PRINTER_BLE
+    // Printer transport does not enroll as a phone or overwrite its bond.
+    if (printer_ble::isPeer(result.bd_addr)) return;
+#endif
     bool accepted=false;
     {
       Lock guard(bleMutex);
@@ -1112,6 +1147,9 @@ class PairCallbacks : public BLESecurityCallbacks {
 
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* server, esp_ble_gatts_cb_param_t* param) override {
+#if ROBO_PRINTER_BLE
+    if (printer_ble::isPeer(param->connect.remote_bda)) return;
+#endif
     bool accepted;
     {
       Lock guard(bleMutex);
@@ -1143,6 +1181,9 @@ class ServerCallbacks : public BLEServerCallbacks {
     }
   }
   void onDisconnect(BLEServer*, esp_ble_gatts_cb_param_t* param) override {
+#if ROBO_PRINTER_BLE
+    if (printer_ble::isPeer(param->disconnect.remote_bda)) return;
+#endif
     bool ownerLeft;
     {
       Lock guard(bleMutex);
@@ -1197,7 +1238,7 @@ void setup() {
     digitalWrite(pins::Pump, LOW);
     pinMode(pins::Pump, OUTPUT);
   }
-  if (ROBO_ENABLE_PRINTER) {
+  if (ROBO_ENABLE_PRINTER && !ROBO_PRINTER_BLE) {
     digitalWrite(pins::PrinterTx, HIGH);
     pinMode(pins::PrinterTx, OUTPUT);
   }
@@ -1236,7 +1277,7 @@ void setup() {
     pixels.clear();
     pixels.show();
   }
-  if (ROBO_ENABLE_PRINTER) {
+  if (ROBO_ENABLE_PRINTER && !ROBO_PRINTER_BLE) {
     printerSerial.begin(ROBO_PRINTER_BAUD, SERIAL_8N1, pins::PrinterRx, pins::PrinterTx);
     if (!printerSerial) failClosed("Startup failed: printer UART unavailable");
   }
@@ -1290,6 +1331,9 @@ void setup() {
     bondSecurity.setKeySize(16);
   }
   BLEDevice::setMTU(247);
+#if ROBO_PRINTER_BLE
+  if (!printer_ble::begin()) failClosed("Startup failed: BLE printer configuration");
+#endif
   BLEDevice::setCustomGattsHandler(bleGattEvent);
   BLEServer* server = BLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());

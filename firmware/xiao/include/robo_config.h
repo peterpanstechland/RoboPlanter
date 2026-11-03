@@ -122,6 +122,15 @@
 #ifndef ROBO_PRINTER_CUTTER_CONFIRMED
 #define ROBO_PRINTER_CUTTER_CONFIRMED 0
 #endif
+#ifndef ROBO_PRINTER_BLE
+#define ROBO_PRINTER_BLE 0
+#endif
+#ifndef ROBO_PRINTER_BLE_ADDRESS
+#define ROBO_PRINTER_BLE_ADDRESS "00:00:00:00:00:00"
+#endif
+#ifndef ROBO_PRINTER_BLE_ADDRESS_TYPE
+#define ROBO_PRINTER_BLE_ADDRESS_TYPE 0 // Public address; 1 for random.
+#endif
 
 namespace pins {
 constexpr int Soil = 1;       // D0, SERVO3 signal; supply sensor separately at 3.3V.
@@ -164,8 +173,11 @@ static_assert(!ROBO_ENABLE_PUMP || ROBO_RELAY_WIRING_CONFIRMED,
               "Confirm relay moved to SERVO1 GPIO42; SERVO4 belongs to printer");
 static_assert(!ROBO_ENABLE_PRINTER || ROBO_PRINTER_HARDWARE_CONFIRMED,
               "Confirm printer supply, TTL voltage, baud and protocol first");
-static_assert(!ROBO_ENABLE_PRINTER || ROBO_PRINTER_D8_WIRING_CONFIRMED,
+static_assert(!ROBO_ENABLE_PRINTER || ROBO_PRINTER_BLE || ROBO_PRINTER_D8_WIRING_CONFIRMED,
               "Printer RX must connect to SERVO4 D8/GPIO7; remove pump/servo");
+static_assert(sizeof(ROBO_PRINTER_BLE_ADDRESS) == 18, "BLE printer address must contain six hex pairs");
+static_assert(ROBO_PRINTER_BLE_ADDRESS_TYPE == 0 || ROBO_PRINTER_BLE_ADDRESS_TYPE == 1,
+              "BLE address type must be public (0) or random (1)");
 static_assert(pins::Pump != pins::PrinterTx, "Pump must not share printer TX");
 static_assert(!ROBO_ENABLE_SEN54 || ROBO_SEN54_WIRING_CONFIRMED,
               "SEN54 requires verified 5V supply and 3.3V I2C logic");
