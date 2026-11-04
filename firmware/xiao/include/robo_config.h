@@ -191,12 +191,14 @@ static_assert(!(ROBO_ENABLE_SEN54 && (ROBO_ENABLE_DHT20 || ROBO_ENABLE_SHT31 || 
               "SEN54 replaces the legacy environment and analog air sensors");
 static_assert(!ROBO_ENABLE_ULTRASONIC || ROBO_ULTRASONIC_WIRING_CONFIRMED,
               "Confirm Grove Ranger v2.0 signal pin and separate 3.3V supply");
-static_assert(ROBO_ULTRASONIC_GPIO == 8 || ROBO_ULTRASONIC_GPIO == 7,
-              "Ranger supports only SERVO2/GPIO8 or verified free SERVO4/GPIO7");
+static_assert(ROBO_ULTRASONIC_GPIO == 8 || ROBO_ULTRASONIC_GPIO == 7 || ROBO_ULTRASONIC_GPIO == 44,
+              "Ranger requires verified free GPIO8, GPIO7 or UART RX/GPIO44");
 static_assert(!(ROBO_ENABLE_ULTRASONIC && ROBO_ENABLE_AIR && pins::Ultrasonic == pins::Air),
               "SERVO2 cannot host air ADC and ranger");
 static_assert(!(ROBO_ENABLE_ULTRASONIC && ROBO_ENABLE_PRINTER && !ROBO_PRINTER_BLE && pins::Ultrasonic == pins::PrinterTx),
               "SERVO4 ranger cannot share the UART printer TX pin; disconnect TTL and use BLE printing");
+static_assert(!(ROBO_ENABLE_ULTRASONIC && ROBO_ENABLE_PRINTER && !ROBO_PRINTER_BLE && pins::Ultrasonic == pins::PrinterRx),
+              "UART RX ranger requires BLE printing and disconnected printer TTL");
 static_assert(!ROBO_ENABLE_PUMP || ROBO_ENABLE_ULTRASONIC,
               "Pump requires the water tank sensor and runtime interlock");
 static_assert(ROBO_PRINTER_BAUD >= 9600 && ROBO_PRINTER_BAUD <= 1000000,

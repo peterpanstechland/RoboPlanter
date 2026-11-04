@@ -288,7 +288,7 @@ export ROBOPLANTER_TOKEN
 
 ### 8.1 先按最新总表接线
 
-[2026-10-29硬件接线总表](../wiring.md)是当前接线依据。Robot Board的分配为：SERVO1/GPIO42继电器、SERVO2/GPIO8超声波、SERVO3/GPIO1环境光、SERVO4/GPIO7打印TX；土壤在Indicator RP2040 GPIO27。M2/J9不用。
+[最新硬件接线总表](../wiring.md)是当前接线依据。当前Robot Board分配为：SERVO1/GPIO42继电器、UART RX/D7/GPIO44超声波、SERVO3/GPIO1环境光；打印机走BLE且TTL断开；土壤在Indicator RP2040 GPIO27。M2/J9不用。
 
 土壤探头按3.3V供电，黄线接Indicator左侧Grove GPIO27；RP2040运行仓库的soil_uart.py，屏幕开启PLANTER_ENABLE_LOCAL_SOIL，XIAO开启ROBO_ENABLE_REMOTE_SOIL，并关闭ROBO_ENABLE_SOIL。内部UART和HTTP会把原始值汇总给XIAO。数据断线必须失效。
 
@@ -303,7 +303,7 @@ SEN54的SCL→IIC pin1/GPIO6，SDA→pin2/GPIO5，地址0x69。**VCC独立5V，�
 ### 8.3 环境光与超声波
 
 - Light Sensor v1.2黄线OUT→SERVO3/J13 pin1，D0/GPIO1；红线另取3.3V、黑共地、白不接。启用ROBO_ENABLE_AMBIENT_LIGHT及ROBO_AUX_PINS_CONFIRMED；UV/本地土壤保持0。遮挡响应已通过，ADC不是lux。
-- Ultrasonic Ranger v2.0黄线SIG→SERVO2/J5 pin1，D9/GPIO8；红线另取3.3V、黑共地、白不接。启用ROBO_ENABLE_ULTRASONIC及ROBO_ULTRASONIC_WIRING_CONFIRMED；AIR保持0。单SIG双向测距，不能插IIC口。
+- Ultrasonic Ranger v2.0黄线SIG→UART/J10 pin2，RX/D7/GPIO44，设置`ROBO_ULTRASONIC_GPIO=44`；红线另取3.3V、黑共地、白不接。启用ROBO_ENABLE_ULTRASONIC及ROBO_ULTRASONIC_WIRING_CONFIRMED；AIR保持0。单SIG双向测距，不能插IIC口。
 - 先对准10–30cm平整物体验证变化。当前只验收距离，水箱未建好，不能报告余水百分比。后续满/空/停泵距离标定见[接线总表](../wiring.md)。
 
 ### 8.4 灯带
@@ -327,6 +327,8 @@ SEN54的SCL→IIC pin1/GPIO6，SDA→pin2/GPIO5，地址0x69。**VCC独立5V，�
 通过条件是回复 `completed`、`light.on` 与实物一致。然后逐项尝试 `light on --effect breath`、`chase`、`rainbow`，每次观察后可用 `light off` 关闭。HTTP 状态的 `light.effect` 应对应所选模式；旧开灯命令仍使用 `solid`。完整模式、BLE 格式和验收见 [WS2812 教程](ws2812-lighting.md)。这是装饰灯，不是标定过的植物生长灯；没有远程任意调色、亮度或速度接口。
 
 ### 8.5 UART 打印机
+
+当前整机采用BLE打印，UART RX/D7/GPIO44已用于超声波，打印机TTL信号线全部断开。以下仅保留历史UART方案，不能与当前接线混用。
 
 先确认供电与 TTL 电平。断电后将 **SERVO4/J14 pin1 / D8 / GPIO7 → 打印机 RX**；打印机 TX 确认是 3.3V 逻辑或加电平转换后 → 原 UART/J10 pin2 / GPIO44。公共 GND → J10 pin4，GPIO43 不接打印机。SERVO4 不能同时接泵或舵机，打印与泵使用不同GPIO；控制器限制两者不能同时运行。**打印机独立供电，SERVO4 的 Motor5V 和 UART 的 3.3V 都不接打印机电源。** 详细接线与验收见 [UART 打印机](uart-printer.md)。
 

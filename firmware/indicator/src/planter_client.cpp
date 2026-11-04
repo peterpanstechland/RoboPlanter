@@ -3,6 +3,7 @@
 #include "../../xiao/include/auto_light_json.h"
 #include "config.h"
 #include "device_settings.h"
+#include "network_setup.h"
 #include "local_soil.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -90,7 +91,8 @@ bool configureHttp(HTTPClient &http, WiFiClient &client, const char *path) {
   http.setTimeout(kHttpTimeoutMs);
   http.setReuse(false);
   http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
-  if (!http.begin(client, String(PLANTER_BASE_URL) + path)) return false;
+  const auto endpoint=device_settings::planterEndpoint();
+  if (!http.begin(client, String(endpoint.address) + path)) return false;
   http.addHeader("X-Device-Token", PLANTER_DEVICE_TOKEN);
   return true;
 }
@@ -207,6 +209,8 @@ void pollState() {
   }
   next.tankEnabled = doc["water_tank"]["enabled"] == true;
   next.tankCalibrated = doc["water_tank"]["calibrated"] == true;
+  copy(next.tankError,doc["water_tank"]["error"]|"");
+  next.tankGpio=doc["water_tank"]["signal_gpio"].is<uint8_t>()?doc["water_tank"]["signal_gpio"].as<uint8_t>():0;
   if (next.tankEnabled) {
     next.tankDistance = reading(doc["water_tank"], "distance_mm");
     next.tankDistance.valid = next.tankDistance.valid && next.tankDistance.value >= 20 && next.tankDistance.value <= 3500;
@@ -513,6 +517,7 @@ void networkTask(void *) {
     // Settings service owns the Wi-Fi API. Scanning, switching and connection
     // timeout/retry handling never run in the display/touch task.
     device_settings::service();
+    network_setup::service();
     // Transition-only diagnostics; never log SSID, password, IP or token.
     const auto wifiStatus = device_settings::wifiState();
     const unsigned statusBits = unsigned(wifiStatus.phase) | (unsigned(wifiStatus.error) << 4) |
@@ -578,12 +583,13 @@ void networkTask(void *) {
 namespace planter {
 bool begin() {
   if (!device_settings::begin()) return false;
+  if(!network_setup::begin()){device_settings::workerStartupFailed();return false;}
   lock = xSemaphoreCreateMutex();
   commands = xQueueCreate(1, sizeof(Command));
   stops = xQueueCreate(1, sizeof(Command));
   bootNonce = esp_random();
   if (lock && commands && stops &&
-      xTaskCreatePinnedToCore(networkTask, "planter-http", 12288, nullptr, 1, nullptr, 0) == pdPASS) return true;
+      xTaskCreatePinnedToCore(networkTask, "planter-http", 16384, nullptr, 1, nullptr, 0) == pdPASS) return true;
   // No worker exists, so requests must not remain accepted/Connecting forever.
   if (stops) vQueueDelete(stops);
   if (commands) vQueueDelete(commands);

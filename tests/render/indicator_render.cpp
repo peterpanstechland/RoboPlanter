@@ -12,6 +12,7 @@
 #include "../../firmware/indicator/src/ui_text.cpp"
 #include "../../firmware/indicator/src/ui_photos.cpp"
 #include "../../firmware/indicator/src/settings_ui.cpp"
+#include "network_setup_stub.h"
 #include "../../firmware/indicator/src/garden_art.cpp"
 #include "../../firmware/indicator/src/garden_ui.cpp"
 #include <Arduino_G.cpp>

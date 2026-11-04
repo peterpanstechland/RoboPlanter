@@ -77,6 +77,10 @@ def pair(source: Path, output: Path, url: str, expected_id: str | None = None,
     if not sta:
         ssid = device_id
     replacements = dict(zip(FIELDS, (ssid, password, url.rstrip('/'), token)))
+    replacements["PLANTER_DEVICE_ID"]=device_id
+    setup_password=text_value(cfg,"ROBO_AP_PASSWORD","planter-demo")
+    if setup_password!="planter-demo":
+        replacements["PLANTER_SETUP_PASSWORD"]=setup_password
     # Preserve UI/local sensor options, comments and any other existing fields.
     original = output.read_text(encoding="utf-8") if output.exists() else "#pragma once\n"
     for field, value in replacements.items():

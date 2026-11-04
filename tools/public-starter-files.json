@@ -201,6 +201,14 @@
     "tools/test-indicator-font.ps1",
     "tools/test-indicator-ui.ps1",
     "tools/test-settings-ui.ps1",
-    "web/experience/assets/wiring-overview.svg"
+    "web/experience/assets/wiring-overview.svg",
+    "firmware/indicator/include/network_setup.h",
+    "firmware/indicator/src/network_setup.cpp",
+    "firmware/xiao/include/wifi_credentials.h",
+    "firmware/xiao/include/wifi_setup.h",
+    "tests/render/network_setup_stub.h",
+    "tests/settings/network_setup_test.cpp",
+    "tests/settings/wifi_setup_test.cpp",
+    "tests/settings/stubs/ESPmDNS.h"
   ]
 }

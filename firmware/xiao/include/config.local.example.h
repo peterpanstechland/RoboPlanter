@@ -3,6 +3,8 @@
 // Use a random 16..64 character token, without whitespace or '|'.
 #define ROBO_DEVICE_TOKEN "change-me-before-use"
 #define ROBO_AP_PASSWORD "planter-demo"
+// Set a private 8..63 character password before enabling station recovery
+// setup. The default above is rejected by the new recovery setup window.
 #define ROBO_ENABLE_ACTIONS 0
 // Optional shared 2.4GHz LAN mode. Defaults remain the standalone SoftAP.
 #define ROBO_WIFI_STA 0
@@ -33,7 +35,7 @@
 #define ROBO_ENABLE_SEN54 0 // Replaces DHT20/SHT31 and analog Air; I2C 0x69.
 #define ROBO_SEN54_WIRING_CONFIRMED 0 // Separate 5V VCC, SDA/SCL at 3.3V.
 #define ROBO_ENABLE_ULTRASONIC 0 // Grove Ranger v2.0, SERVO2 GPIO8, 3.3V.
-#define ROBO_ULTRASONIC_GPIO 8 // 7: optional SERVO4/D8 only when free and printer TTL physically disconnected.
+#define ROBO_ULTRASONIC_GPIO 8 // Current unit uses 44: UART RX/D7, BLE printer only, all printer TTL disconnected. 7/8 remain alternatives for verified free pins.
 #define ROBO_ULTRASONIC_WIRING_CONFIRMED 0 // Disconnect analog Air first.
 // Fixed probe-to-water distances in mm. Unknown calibration blocks watering.
 #define ROBO_TANK_FULL_MM -1

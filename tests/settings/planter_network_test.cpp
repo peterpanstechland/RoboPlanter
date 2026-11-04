@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <Preferences.h>
 #include "../../firmware/indicator/src/planter_client.cpp"
+#include "../render/network_setup_stub.h"
 #include "planter_presentation.h"
 #include "connection_presentation.h"
 // This network harness does not run the RP2040 sampler or invent soil data.

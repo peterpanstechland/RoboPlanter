@@ -27,6 +27,8 @@ struct State {
   Reading soilRaw, soilPercent, airRaw, uvRaw, ambientLightRaw, temperature, humidity;
   Reading pm25, vocIndex, tankDistance, tankLevel;
   bool sen54Enabled = false, tankEnabled = false, tankCalibrated = false;
+  char tankError[40]={};
+  uint8_t tankGpio=0;
   bool waterAllowed = false;
   bool yoyoEnabled=false, yoyoPaired=false, yoyoConnected=false, yoyoPairing=false;
   bool yoyoLinkConnected=false, yoyoRepairSupported=false, yoyoRepairing=false;

@@ -2,6 +2,7 @@
 #include "device_settings.h"
 #include "planter_presentation.h"
 #include "connection_presentation.h"
+#include "network_setup.h"
 #include "indicator_board.h"
 #include "ui_text.h"
 #include "ui_theme.h"
@@ -13,8 +14,10 @@ namespace {
 using device_settings::Language;
 using device_settings::WifiError;
 using device_settings::WifiPhase;
-enum class Page : uint8_t { Menu, Wifi, Password, About, Planter, Yoyo, Calibration, Soil, Tank, ResetCalibration, AutoLight, RepairYoyo };
+enum class Page : uint8_t { Menu, Wifi, Password, About, Planter, Yoyo, Calibration, Soil, Tank, ResetCalibration, AutoLight, RepairYoyo, Network, NetworkProgress };
+bool setupBoth=false;
 struct Rect { int16_t x, y, w, h; };
+constexpr Rect kSetupBoth{24,230,432,60},kScreenWifi{24,310,432,60};
 constexpr Rect kChinese{24, 117, 208, 48}, kEnglish{248, 117, 208, 48};
 constexpr Rect kWifi{16, 181, 216, 76}, kLightSettings{248,181,216,76}, kPlanter{16, 394, 216, 54}, kAbout{248, 394, 216, 54};
 constexpr Rect kCompanion{24,332,208,60}, kCalibration{248,332,208,60}, kPairPhone{24,174,432,54}, kAutoPrint{24,316,432,54};
@@ -184,7 +187,7 @@ void drawMenu(const ui_theme::Theme &t) {
 void drawWifi(const ui_theme::Theme &t) {
   const auto state = device_settings::wifiState();
   syncList(state);
-  text(24, 82, phaseText(state), t.ink, 24);
+  text(24, 82, setupBoth?tr("选择两台设备使用的网络","Choose Wi-Fi for both devices"):phaseText(state), t.ink, 24);
   const char *ssid = state.phase == WifiPhase::Connected ? state.connectedSsid : state.targetSsid;
   text(24, 116, ssid[0] ? ssid : tr("仅支持 2.4 GHz 网络", "2.4 GHz networks only"), t.muted, 16);
   if (state.error != WifiError::None) text(24, 138, errorText(state.error), t.accent, 16);
@@ -291,6 +294,53 @@ void drawPlanter(const ui_theme::Theme &t, uint32_t now) {
     wifi.ready && wifi.phase!=WifiPhase::Connecting && !wifi.scanning && !state.checking && !state.commandBlocked,16);
   button(kNetworkSettings, tr("无线网络设置", "Wi-Fi settings"), t, false, true, 16);
 }
+void drawNetwork(const ui_theme::Theme& t,uint32_t now) {
+  text(24,90,tr("两台设备，一次配网","One setup for both devices"),t.ink,24);
+  text(24,140,tr("选择网络，输入一次密码。","Choose Wi-Fi and enter its password."),t.muted,16);
+  text(24,173,tr("主控与屏幕验证成功后分别保存。","XIAO and screen save after connecting."),t.muted,16);
+  button(kSetupBoth,tr("选择 Wi-Fi，配置两台","Set up both devices"),t,true,network_setup::supported(),24);
+  button(kScreenWifi,tr("仅设置屏幕 Wi-Fi","Screen Wi-Fi only"),t,false,true,24);
+  text(24,407,tr("断网时，主控约30秒后开启恢复热点。","Offline XIAO opens recovery Wi-Fi after 30s."),t.muted,16);
+  text(24,441,tr("手机蓝牙绑定和标定继续保留。","Phone bond and calibration are kept."),t.muted,16);
+}
+void drawNetworkProgress(const ui_theme::Theme& t,uint32_t now) {
+  using network_setup::Phase;const auto s=network_setup::snapshot();
+  const char* zh="等待操作",*en="Waiting";
+  switch(s.phase) {
+    case Phase::Opening:zh="1 / 5  开启主控配网";en="1 / 5  Opening XIAO setup";break;
+    case Phase::JoiningSetup:zh="2 / 5  连接主控恢复热点";en="2 / 5  Joining recovery Wi-Fi";break;
+    case Phase::Sending:zh="3 / 5  发送网络配置";en="3 / 5  Sending Wi-Fi settings";break;
+    case Phase::WaitingXiao:zh="3 / 5  主控试连新网络";en="3 / 5  XIAO connecting";break;
+    case Phase::JoiningNetwork:zh="4 / 5  屏幕连接新网络";en="4 / 5  Screen connecting";break;
+    case Phase::Verifying:zh="5 / 5  验证两板通信";en="5 / 5  Verifying device link";break;
+    case Phase::Done:zh="配网完成，两台设备已保存";en="Both devices connected and saved";break;
+    case Phase::Failed:case Phase::Unknown:zh="配网未完成，请检查后重试";en="Setup incomplete; check and retry";break;
+    default:break;
+  }
+  text(24,96,tr(zh,en),t.ink,24);
+  if(s.phase==Phase::Done) {
+    text(24,155,tr("主控和屏幕已经互相确认。","XIAO and screen have verified the link."),t.muted,16);
+    text(24,190,tr("以后上电会读取保存的网络。","Saved Wi-Fi is loaded on power-on."),t.muted,16);
+    text(24,248,tr("可以返回查看实时数据","View live data in the connection page"),t.ink,24);
+  } else {
+    text(24,155,tr("请保持两台设备供电。","Keep both devices powered."),t.muted,16);
+    text(24,190,tr("换网过程中暂时断开属于正常。","A brief disconnect during setup is normal."),t.muted,16);
+    char elapsed[80];snprintf(elapsed,sizeof(elapsed),tr("本阶段已等待 %lu 秒","This step: %lu seconds"),static_cast<unsigned long>((now-s.startedMs)/1000));
+    if(network_setup::busy(s.phase))text(24,248,elapsed,t.ink,24);
+  }
+  if(s.error[0]) {
+    const char* reason=!strcmp(s.error,"wifi_connection_failed")?tr("主控未连上，请核对网络名称与密码","XIAO could not join; check Wi-Fi/password"):
+      !strcmp(s.error,"setup_timeout")?tr("连接超时，请检查主控供电及热点","Timed out; check XIAO power and setup Wi-Fi"):
+      !strcmp(s.error,"device_authentication_failed")?tr("两板鉴权不一致，请检查配对配置","Device authentication failed; check config"):
+      !strcmp(s.error,"storage_failed")?tr("主控保存失败，原网络配置已保留","XIAO could not save; previous Wi-Fi kept"):
+      !strcmp(s.error,"xiao_rejected_settings")?tr("主控拒绝配置，请等待设备空闲再试","XIAO rejected setup; wait until idle"):
+      tr("连接未完成，请返回检查链路再试","Setup incomplete; check the link and retry");
+    text(24,270,reason,t.muted,16);
+    text(24,313,s.error,t.muted,16);
+  }
+  button(kRepairConfirm,tr("查看连接","View connection"),t,false,true,24);
+  button(kRepairCancel,tr("重新配网","Try setup again"),t,false,!network_setup::busy(s.phase),24);
+}
 void drawYoyo(const ui_theme::Theme &t,uint32_t now) {
   const auto state=planter::snapshot();
   const bool live=planter::fresh(state,now),ready=live && !state.commandBlocked;
@@ -372,6 +422,7 @@ void back() {
 const char *title() {
   switch (page) {
     case Page::Wifi: return tr("无线网络", "Wi-Fi");
+    case Page::Network:case Page::NetworkProgress:return tr("设备配网","Device Wi-Fi setup");
     case Page::Password: return tr("连接网络", "Join network");
     case Page::About: return tr("关于设备", "About device");
     case Page::Yoyo: return tr("YOYO 伙伴", "YOYO companion");
@@ -392,6 +443,8 @@ void draw(uint32_t now, uint8_t themeId) {
   switch (page) {
     case Page::Menu: drawMenu(t); break;
     case Page::Wifi: drawWifi(t); break;
+    case Page::Network:drawNetwork(t,now);break;
+    case Page::NetworkProgress:drawNetworkProgress(t,now);break;
     case Page::Password: drawPassword(t); break;
     case Page::About: drawAbout(t); break;
     case Page::Planter: drawPlanter(t, now); break;
@@ -406,12 +459,22 @@ void draw(uint32_t now, uint8_t themeId) {
 bool handle(ui::Gesture gesture, const ui::TouchGate &touch, uint32_t now) {
   if (!opened) return false;
   if (gesture != ui::Gesture::Tap) return true;
+  if(page==Page::Network) {
+    if(tapped(kSetupBoth,touch)&&network_setup::supported()){setupBoth=true;showWifi();}
+    else if(tapped(kScreenWifi,touch)){setupBoth=false;showWifi();}
+    return true;
+  }
+  if(page==Page::NetworkProgress) {
+    if(tapped(kRepairConfirm,touch))page=Page::Planter;
+    else if(tapped(kRepairCancel,touch)&&!network_setup::busy(network_setup::snapshot().phase))page=Page::Network;
+    return true;
+  }
   if(page==Page::AutoLight) { handleAutoLight(touch,now); return true; }
   if (handleCalibration(touch, now)) return true;
   if (page == Page::Menu) {
     if (tapped(kChinese, touch)) settingsRejected = !device_settings::setLanguage(Language::Chinese);
     else if (tapped(kEnglish, touch)) settingsRejected = !device_settings::setLanguage(Language::English);
-    else if (tapped(kWifi, touch)) showWifi();
+    else if (tapped(kWifi, touch)) {setupBoth=false;showWifi();}
     else if(tapped(kLightSettings,touch))openAutoLight();
     else if (tapped(kAbout, touch)) page = Page::About;
     else if (tapped(kPlanter, touch)) page = Page::Planter;
@@ -438,7 +501,7 @@ bool handle(ui::Gesture gesture, const ui::TouchGate &touch, uint32_t now) {
   } else if (page == Page::Planter) {
     if(tapped(kCompanion,touch))page=Page::Yoyo;
     else if(tapped(kCalibration,touch))page=Page::Calibration;
-    else if (tapped(kNetworkSettings, touch)) showWifi();
+    else if (tapped(kNetworkSettings, touch)) page=network_setup::busy(network_setup::snapshot().phase)?Page::NetworkProgress:Page::Network;
     else if (tapped(kPairedNetwork, touch) && device_settings::wifiState().ready) {
       const auto wifi=device_settings::wifiState();
       const auto state=planter::snapshot();
@@ -465,8 +528,8 @@ bool handle(ui::Gesture gesture, const ui::TouchGate &touch, uint32_t now) {
     }
   } else if (page == Page::Password) {
     if (tapped(kModes[3], touch) && validPassword()) {
-      if (device_settings::requestConnect(selectedSsid, password)) {
-        wipePassword(); selectedSsid[0] = 0; page = Page::Wifi;
+      if (setupBoth?network_setup::start(selectedSsid,password):device_settings::requestConnect(selectedSsid, password)) {
+        wipePassword(); selectedSsid[0] = 0; page = setupBoth?Page::NetworkProgress:Page::Wifi;
       } else {
         joinError = device_settings::wifiState().error;
         if (joinError == WifiError::None) joinError = WifiError::ConnectionFailed;

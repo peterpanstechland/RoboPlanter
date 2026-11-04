@@ -1,11 +1,18 @@
 #pragma once
 #include "Arduino.h"
 #include <vector>
-enum { WIFI_STA = 1, WIFI_AUTH_OPEN = 0, WIFI_AUTH_WPA2_PSK = 3, WIFI_SCAN_RUNNING = -1, WIFI_SCAN_FAILED = -2 };
+enum { WIFI_STA = 1, WIFI_AP_STA = 3, WIFI_AUTH_OPEN = 0, WIFI_AUTH_WPA2_PSK = 3, WIFI_SCAN_RUNNING = -1, WIFI_SCAN_FAILED = -2 };
 enum wl_status_t { WL_IDLE_STATUS, WL_NO_SSID_AVAIL, WL_CONNECTED, WL_CONNECT_FAILED, WL_DISCONNECTED };
 enum arduino_event_id_t { ARDUINO_EVENT_WIFI_STA_DISCONNECTED };
 struct arduino_event_info_t { struct { uint8_t reason = 0, ssid_len = 0, ssid[32] = {}; } wifi_sta_disconnected; };
-struct TestAddress { String toString() const { return "192.168.4.2"; } };
+struct TestAddress {
+  bool valid=false;
+  TestAddress(bool value=false):valid(value){}
+  String toString() const { return "192.168.4.2"; }
+  operator uint32_t()const{return valid?1:0;}
+  bool fromString(const char* s){valid=!strcmp(s,"192.168.4.2");return valid;}
+};
+using IPAddress=TestAddress;
 struct TestNetwork { String ssid; int32_t signal; bool secure; };
 class TestWifi {
  public:
@@ -18,6 +25,9 @@ class TestWifi {
   int16_t scanResult = WIFI_SCAN_RUNNING;
   bool asyncScan = false, autoReconnect = true;
   void mode(int) {}
+  void setHostname(const char*){}
+  bool softAP(const char*,const char*,int,bool,int){return true;}
+  void softAPdisconnect(bool){}
   void persistent(bool) {}
   void setAutoReconnect(bool value) { autoReconnect = value; }
   void onEvent(Callback cb, arduino_event_id_t) { callback = cb; }

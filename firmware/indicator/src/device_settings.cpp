@@ -17,6 +17,8 @@ constexpr uint32_t kConnectTimeoutMs = 20000, kRetryMs = 30000;
 struct Credentials { uint32_t version = 1; char ssid[33] = {}, password[65] = {}; };
 struct WifiRequest {
   bool present = false, save = false;
+  bool pairing = false;
+  char address[96]={};
   bool retryKnownNetwork = false;
   uint32_t revision = 0;
   Credentials credentials;
@@ -35,6 +37,9 @@ bool reconnectRequested = false;
 bool languageDirty = false, brightnessDirty = false, scanRequested = false;
 uint32_t revision = 1;
 WifiRequest pending, active;
+struct PairedNetwork { uint32_t version=1; Credentials network; char address[96]={}; };
+char trustedSsid[33]={}, trustedAddress[96]={};
+Credentials trustedCredentials;
 // Worker-owned fields below are never read by the UI or the Wi-Fi event task.
 bool workerStarted = false, scanRunning = false;
 ConnectStage stage = ConnectStage::Idle;
@@ -160,7 +165,7 @@ void serviceConnection() {
         copy(state.connectedSsid, active.credentials.ssid);
         copy(state.ip, WiFi.localIP().toString().c_str());
         state.rssi = WiFi.RSSI();
-        state.planterNetwork = !strcmp(active.credentials.ssid, PLANTER_WIFI_SSID);
+        state.planterNetwork = !strcmp(active.credentials.ssid, trustedSsid);
       }
       // Save a single atomic blob only after association + DHCP succeeds.
       // A failed password attempt must not replace working boot credentials.
@@ -172,6 +177,16 @@ void serviceConnection() {
         if (active.revision == revision) state.saved = ok;
       }
       active.save = false;
+      if(active.pairing) {
+        PairedNetwork paired;paired.network=active.credentials;copy(paired.address,active.address);
+        const bool ok=preferencesReady && preferences.putBytes("pairing",&paired,sizeof(paired))==sizeof(paired);
+        storageResult(ok);
+        if(ok) {
+          Guard guard;trustedCredentials=paired.network;copy(trustedSsid,paired.network.ssid);copy(trustedAddress,paired.address);
+          state.planterNetwork=true;
+        }
+        active.pairing=false;
+      }
       active.retryKnownNetwork = true;
       return;
     }
@@ -301,8 +316,16 @@ bool begin() {
   preferencesReady = preferences.begin("rp-settings", false);
   Credentials credentials;
   defaultCredentials(credentials);
-  bool saved = false;
+  trustedCredentials=credentials;copy(trustedSsid,PLANTER_WIFI_SSID);copy(trustedAddress,PLANTER_BASE_URL);
+  bool saved = false, pairedSaved=false;
   if (preferencesReady) {
+    PairedNetwork paired;
+    if(preferences.getBytesLength("pairing")==sizeof(paired) && preferences.getBytes("pairing",&paired,sizeof(paired))==sizeof(paired) &&
+       paired.version==1 && paired.network.version==1 && paired.network.ssid[32]==0 && paired.network.password[64]==0 && paired.address[95]==0 &&
+       validCredentials(paired.network.ssid,paired.network.password) && !strncmp(paired.address,"http://",7)) {
+      trustedCredentials=paired.network;copy(trustedSsid,paired.network.ssid);copy(trustedAddress,paired.address);
+      pairedSaved=true;
+    }
     const uint8_t storedLanguage = preferences.getUChar("language", 0);
     language = storedLanguage == 1 ? Language::English : Language::Chinese;
     const uint8_t storedBrightness = preferences.getUChar("brightness", 80);
@@ -315,6 +338,9 @@ bool begin() {
       credentials = stored; saved = true;
     }
     wipe(&stored, sizeof(stored));
+    // The atomic pairing blob owns both credentials and endpoint. A power
+    // loss between the legacy Wi-Fi write and pairing commit cannot mix them.
+    if(pairedSaved){credentials=trustedCredentials;saved=true;}
   }
   pending.present = true; pending.revision = revision; pending.credentials = credentials;
   // A successful first boot also persists the provisioned network. Subsequent
@@ -347,10 +373,12 @@ bool saveBrightness(uint8_t percent) {
 WifiSnapshot wifiState() { if (!initialized) return WifiSnapshot(); Guard guard; return state; }
 PlanterEndpoint planterEndpoint() {
   PlanterEndpoint result;
-  copy(result.ssid, PLANTER_WIFI_SSID);
+  if(!initialized)return result;
+  Guard guard;
+  copy(result.ssid, trustedSsid);
   // Show only the origin. Even a mistakenly configured URL containing userinfo
   // or a query must not expose it on the display.
-  const char *url = PLANTER_BASE_URL;
+  const char *url = trustedAddress;
   const char *scheme = strstr(url, "://");
   if (scheme && (!strncmp(url, "http://", 7) || !strncmp(url, "https://", 8))) {
     const char *host = scheme + 3;
@@ -366,7 +394,7 @@ PlanterEndpoint planterEndpoint() {
   }
   result.configured = result.address[0] && PLANTER_DEVICE_TOKEN[0] &&
                       strcmp(PLANTER_DEVICE_TOKEN, "change-me-before-use") &&
-                      strcmp(PLANTER_WIFI_SSID, "RoboPlanter-XXXX");
+                      strcmp(result.ssid, "RoboPlanter-XXXX");
   return result;
 }
 bool requestScan() {
@@ -378,13 +406,15 @@ bool requestScan() {
   state.networkCount = 0;
   return true;
 }
-bool queueConnection(const char *ssid, const char *password, bool knownNetwork) {
+bool queueConnection(const char *ssid, const char *password, bool knownNetwork, bool save=true, const char* address=nullptr) {
   if (!initialized) return false;
   Guard guard;
   if (!state.ready) return false;
   if (!validCredentials(ssid, password)) { state.error = WifiError::InvalidInput; return false; }
   if (stopNetworkReserved || reconnectRequested || pending.present) { state.error = WifiError::Busy; return false; }
-  pending.present = true; pending.save = true;
+  pending.present = true; pending.save = save;
+  pending.pairing=address!=nullptr;
+  if(address)copy(pending.address,address);
   pending.retryKnownNetwork = knownNetwork;
   pending.revision = ++revision;
   // A connect request supersedes a scan not yet started by the worker. An
@@ -396,7 +426,22 @@ bool queueConnection(const char *ssid, const char *password, bool knownNetwork) 
   return true;
 }
 bool requestConnect(const char *ssid, const char *password) { return queueConnection(ssid, password, false); }
-bool restoreDefaultWifi() { return queueConnection(PLANTER_WIFI_SSID, PLANTER_WIFI_PASSWORD, true); }
+bool restoreDefaultWifi() {
+  if(!initialized)return false;
+  Credentials selected;{Guard guard;selected=trustedCredentials;}
+  const bool ok=queueConnection(selected.ssid,selected.password,true);wipe(&selected,sizeof(selected));return ok;
+}
+bool requestTemporaryConnect(const char* ssid,const char* password) {return queueConnection(ssid,password,true,false);}
+bool configurePlanterNetwork(const char* ssid,const char* password,const char* address) {
+  if(!address || strlen(address)>=96 || strncmp(address,"http://",7) || strpbrk(address+7,"/@?#"))return false;
+  return queueConnection(ssid,password,true,true,address);
+}
+bool updatePlanterAddress(const char* address) {
+  if(!initialized || !address || strlen(address)>=96 || strncmp(address,"http://",7) || strpbrk(address+7,"/@?#"))return false;
+  Guard guard;
+  if(stopNetworkReserved || pending.present || strcmp(address,trustedAddress)==0)return false;
+  copy(trustedAddress,address);++revision;return true;
+}
 bool requestReconnect() {
   if (!initialized) return false;
   Guard guard;

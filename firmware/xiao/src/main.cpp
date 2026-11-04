@@ -26,6 +26,7 @@
 #include "printer_transport.h"
 #include "ble_session.h"
 #include "robo_config.h"
+#include "wifi_setup.h"
 #include "ble_printer.h"
 #include "remote_soil.h"
 #include "diagnostic_read_session.h"
@@ -1527,8 +1528,7 @@ void setup() {
   snprintf(suffix, sizeof(suffix), "%04X", static_cast<unsigned>(ESP.getEfuseMac() & 0xffff));
   deviceId = String("RoboPlanter-") + suffix;
   if (ROBO_WIFI_STA) {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ROBO_STA_SSID,ROBO_STA_PASSWORD);
+    wifi_setup::begin(deviceId);
   } else {
     WiFi.mode(WIFI_AP);
     if (!WiFi.softAP(deviceId.c_str(), ROBO_AP_PASSWORD, 1, false, 2))
@@ -1543,6 +1543,33 @@ void setup() {
     sendJson(200, output);
   });
   http.on("/api/v1/command", HTTP_POST, httpCommand);
+  http.on("/api/v1/wifi",HTTP_GET,[](){
+    if(!httpAuthorized())return;
+    StaticJsonDocument<768> out;out["device_id"]=deviceId;
+    wifi_setup::state(out.createNestedObject("network"));sendJson(200,out);
+  });
+  http.on("/api/v1/wifi",HTTP_POST,[](){
+    if(!httpAuthorized())return;
+    if(!ROBO_WIFI_STA){sendError(409,"station_mode_required");return;}
+    if(http.header("Content-Type").indexOf("application/json")!=0){sendError(415,"content_type_required");return;}
+    String body=http.arg("plain");if(body.length()>384){sendError(413,"body_size_invalid");return;}
+    StaticJsonDocument<512> in;
+    if(deserializeJson(in,body)||!in.is<JsonObject>()){sendError(400,"invalid_wifi_request");return;}
+    std::string id,ssid,password;
+    if(in.size()!=3 || !jsonString(in["request_id"],id) || !robo::validId(id) ||
+       !jsonString(in["ssid"],ssid) || !jsonString(in["password"],password)) {sendError(400,"invalid_wifi_request");return;}
+    if(id==wifi_setup::requestId) {
+      StaticJsonDocument<768> out;out["device_id"]=deviceId;wifi_setup::state(out.createNestedObject("network"));sendJson(200,out);return;
+    }
+    {Lock guard(coreMutex);if(controller.pumpOn() || controller.printerBusy()){sendError(409,"actuator_busy");return;}}
+    if(!wifi_setup::submit(id.c_str(),ssid.c_str(),password.c_str())){sendError(409,"wifi_setup_unavailable");return;}
+    StaticJsonDocument<768> out;out["device_id"]=deviceId;wifi_setup::state(out.createNestedObject("network"));sendJson(202,out);
+  });
+  http.on("/api/v1/wifi/setup",HTTP_POST,[](){
+    if(!httpAuthorized())return;
+    if(!ROBO_WIFI_STA || !wifi_setup::openWindow()){sendError(409,"setup_unavailable");return;}
+    StaticJsonDocument<768> out;out["device_id"]=deviceId;wifi_setup::state(out.createNestedObject("network"));sendJson(200,out);
+  });
   http.on("/api/v1/calibration", HTTP_POST, httpCalibration);
   http.on("/api/v1/auto-light", HTTP_POST, httpAutoLight);
   http.on("/api/v1/sensors/soil", HTTP_POST, httpSoil);
@@ -1593,6 +1620,7 @@ void setup() {
 }
 
 void loop() {
+  if(ROBO_WIFI_STA)wifi_setup::service();
   {
     Lock guard(bleMutex);
     if(pairReconnecting && uint32_t(millis()-pairReconnectStarted)>5000) {

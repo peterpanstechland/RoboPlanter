@@ -1,8 +1,8 @@
-# 最新硬件接线 · 2026-11-03
+# 最新硬件接线 · 2026-11-04
 
 适用实物：**XIAO ESP32-S3 Plus + XIAO Robot Board V1.0、SenseCAP Indicator D1**，不是 XIAO Sense。本页替代早期 I²C 水位、GPIO43 打印和 SERVO4 水泵方案。[三维接线小工坊](https://peterpanstechland.github.io/roboplanter/#wiring-lab)仍展示早期稳定基线；本页文字表格包含后续 BLE 打印与超声波排障变更。
 
-**2026-11-03 临时排障状态：**超声波曾由 SERVO2/D9/GPIO8 改接 SERVO4/J14 pin1/D8/GPIO7；为做空载对照，随后已拔下黄线，用户报告 XIAO 也已与底板分离。当前保留的正式应用仍设置 `ROBO_ULTRASONIC_GPIO=7`，打印机使用 BLE、TTL 断开。D7/GPIO44 仅在准备替代引脚检查，尚未成为实际接线方案。下方基线表和三维示意的 SERVO2 分配不能直接用于这份排障固件；测距尚未恢复，见[超声波排障记录](deployment/ultrasonic-diagnostics-20261103.md)。
+**2026-11-04 当前接法：**XIAO已插回Robot Board，超声波黄线改接UART/J10 pin2的RX/D7/GPIO44，红线独立3.3V、黑线共地、白线不接。固件设置`ROBO_ULTRASONIC_GPIO=44`。打印机走BLE，打印机所有TTL信号线断开，GPIO44不能再接打印机TX。主控连续读到约220–225mm有效回波，用户确认屏幕稳定、距离随物体移动变化。旧D8/D9电平异常的具体硬件原因仍未确认，见[历史排查](deployment/ultrasonic-diagnostics-20261103.md)。
 
 ## 硬件认图
 
@@ -35,7 +35,7 @@ Robot Phone / YOYO Skill ── 加密 BLE ──► XIAO Robot Board
 | 外设 | 信号连接 | 供电与其他线 | 当前验证 |
 | --- | --- | --- | --- |
 | Grove SEN54 | Robot IIC1/J11或IIC2/J12：pin2 SDA→XIAO GPIO5，pin1 SCL→GPIO6，地址0x69 | **红线独立5V**，黑线共地；I²C信号/上拉保持3.3V | 温湿度、PM2.5、VOC有效，屏幕显示正常 |
-| Grove Ultrasonic Ranger v2.0 | 黄线当前断开；原用SERVO2/D9/GPIO8，后用SERVO4/D8/GPIO7对照 | 红线另取3.3V，黑线共地，白线不接；不用Servo的5V | 历史测距和满水35/停泵61/空箱80mm标定通过；当前无有效距离，未修复，GPIO44仅待测试 |
+| Grove Ultrasonic Ranger v2.0 | 黄线→UART/J10 pin2，RX/D7/GPIO44；`ROBO_ULTRASONIC_GPIO=44` | 红线另取3.3V，黑线共地，白线不接；不用Servo的5V | D7测距已恢复，移动平板后屏幕读数变化；原标定保留，装回水箱后需核对探头位置 |
 | Grove Relay v1.2 | SERVO1/J1 pin1，D15 / XIAO GPIO42→SIG | 模块支持3.3–5V，使用已核对的接口电源和共地；白线不接 | 空载通过；用户确认12V/150mA泵、水箱与进出水完成，本机已启用 |
 | Grove Light Sensor v1.2 | SERVO3/J13 pin1，D0 / XIAO GPIO1→黄线OUT | 红线另取3.3V，黑线共地，白线不接 | 遮挡/照亮后ADC明显变化 |
 | EM5826H热敏打印机 | **XIAO直接连接打印机BLE**；旧D8 TX与GPIO44返回线已断开 | 独立供电，开机双击走纸键开启蓝牙；USB/TTL不参与当前链路 | BLE中文、比例、78牌日签、切纸、Indicator预览一致通过 |

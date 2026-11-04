@@ -187,6 +187,11 @@ void infoPage(const State &s,uint32_t now) {
     if(s.tankLevel.valid)snprintf(buffer,sizeof(buffer),"%.0f%% / %.0f mm%s",s.tankLevel.value,s.tankDistance.value,fresh?"":tr(" / 旧值"," / old"));
     else snprintf(buffer,sizeof(buffer),tr("%.0f mm / 待校准","%.0f mm / calibrate"),s.tankDistance.value);
   } else strlcpy(buffer,tr("暂无有效值","No reading"),sizeof(buffer));
+  if(!s.tankDistance.valid && fresh && s.tankEnabled) {
+    const char* reason=!strcmp(s.tankError,"trigger_level_mismatch")?tr("信号脚电平异常","Signal pin fault"):
+      !strcmp(s.tankError,"signal_high_after_timeout")?tr("信号持续高电平","Signal stuck high"):tr("未收到有效回波","No valid echo");
+    snprintf(buffer,sizeof(buffer),"GPIO%u / %s",s.tankGpio,reason);
+  }
   infoRow(354,Icon::Water,tr("水箱液位","Tank level"),buffer);
   label(40,412,tr("YOYO 在手机上陪你","Use YOYO on your phone"),theme().muted);
   statusStrip(s,now);

@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1020" role="img" aria-labelledby="title desc">
-<title id="title">RoboPlanter 当前硬件连接 · 2026-10-29</title><desc id="desc">手机加密BLE连接XIAO；Indicator通过同一局域网HTTP连接XIAO，土壤接Indicator。SEN54独立5V。用户确认12V/150mA泵、水箱与实际标定完成；泵已启用，保留水位保护。</desc>
+<title id="title">RoboPlanter 当前硬件连接 · 2026-11-04</title><desc id="desc">手机加密BLE连接XIAO；Indicator通过同一局域网HTTP连接XIAO，土壤接Indicator。SEN54独立5V。用户确认12V/150mA泵、水箱与实际标定完成；泵已启用，保留水位保护。</desc>
 <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0 8 4 0 8" fill="#51795e"/></marker></defs>
 <style>text{font-family:'Microsoft YaHei','Noto Sans CJK SC',sans-serif;fill:#20372a}.h{font-size:25px;font-weight:700}.t{font-size:18px}.s{font-size:16px;fill:#4b6053}.wire{fill:none;stroke:#51795e;stroke-width:3;marker-end:url(#arrow)}.card{fill:#fffdf6;stroke:#b4c5b1;stroke-width:1.5}</style>
 <rect width="1280" height="1020" rx="28" fill="#f3f1e6"/>
-<text x="40" y="50" class="h">工位搭子 / 当前硬件连接</text><text x="40" y="80" class="s">2026-10-29 · 端口逻辑示意，按实物丝印识别 pin1 · 非工程比例图</text>
+<text x="40" y="50" class="h">工位搭子 / 当前硬件连接</text><text x="40" y="80" class="s">2026-11-04 · 端口逻辑示意，按实物丝印识别 pin1 · 非工程比例图</text>
 
 <rect class="card" x="40" y="110" width="345" height="142" rx="16"/>
 <text class="h" x="60" y="144">Robot Phone / YOYO</text>
-<text class="t" x="60" y="176">Skill 0.4.0 → 官方 BLE 工具</text>
+<text class="t" x="60" y="176">YOYO Skill → 官方 BLE 工具</text>
 <text class="t" x="60" y="203">SC + MITM 加密绑定</text>
 <text class="t" x="60" y="230">六位码在 Indicator 上查看</text>
 <rect class="card" x="535" y="110" width="705" height="142" rx="16"/>
@@ -35,10 +35,10 @@
 <text class="t" x="555" y="554">模块 3.3–5V / 共地；白线空</text>
 <text class="t" x="555" y="581">12V / 150mA 泵 · 水位保护</text>
 <rect class="card" x="895" y="461" width="345" height="135" rx="16"/>
-<text class="h" x="915" y="495">SERVO2 / J5 → 超声波</text>
-<text class="t" x="915" y="527">pin1 D9 / GPIO8 → 单 SIG</text>
+<text class="h" x="915" y="495">UART / J10 → 超声波</text>
+<text class="t" x="915" y="527">pin2 RX / D7 / GPIO44 → SIG</text>
 <text class="t" x="915" y="554">独立 3.3V / GND；白线空</text>
-<text class="t" x="915" y="581">v2.0 探头干燥，实测标定</text>
+<text class="t" x="915" y="581">v2.0 / 打印机 TTL 断开</text>
 <rect class="card" x="535" y="620" width="335" height="135" rx="16"/>
 <text class="h" x="555" y="654">SERVO3 / J13 → 环境光</text>
 <text class="t" x="555" y="686">pin1 D0 / GPIO1 → OUT</text>
@@ -50,10 +50,10 @@
 <text class="t" x="915" y="713">5V / GND · 板载信号缓冲</text>
 <text class="t" x="915" y="740">10 颗灯珠 · 亮度 24/255</text>
 <rect class="card" x="535" y="779" width="705" height="135" rx="16"/>
-<text class="h" x="555" y="813">SERVO4 / J14 + UART / J10 → EM5826H</text>
-<text class="t" x="555" y="845">J14 pin1 D8 / GPIO7 → 打印机 RX；SERVO4 不接泵/舵机</text>
-<text class="t" x="555" y="872">打印机 TX（3.3V）→ J10 pin2 D7 / GPIO44</text>
-<text class="t" x="555" y="899">打印机独立 12V / 共地；GPIO43 留空，避开上电日志</text>
+<text class="h" x="555" y="813">XIAO BLE → EM5826H 打印机</text>
+<text class="t" x="555" y="845">XIAO 主控直接蓝牙发送日签；Indicator / YOYO 发起请求</text>
+<text class="t" x="555" y="872">打印机所有 TTL 信号线断开；D7 / GPIO44 留给超声波</text>
+<text class="t" x="555" y="899">打印机独立供电；按铭牌与原机电源，USB/TTL 不用于打印</text>
 <path class="wire" d="M887 252 V302"/>
 <rect class="card" x="40" y="550" width="425" height="206" rx="16"/>
 <text class="h" x="60" y="584">当前版本的替换关系</text>

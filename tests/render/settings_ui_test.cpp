@@ -7,6 +7,7 @@
 #include "../../firmware/indicator/src/ui_text.cpp"
 #include "../../firmware/indicator/src/ui_theme.cpp"
 #include "../../firmware/indicator/src/settings_ui.cpp"
+#include "network_setup_stub.h"
 #include <Arduino_G.cpp>
 #include <Arduino_GFX.cpp>
 #include <canvas/Arduino_Canvas.cpp>
@@ -236,6 +237,18 @@ int main(int argc, char **argv) {
     planter::fixture.yoyoRepairSupported=true;planter::fixture.received=false;tap(100,405);
     require(std::string(settings_ui::title())=="YOYO 伙伴","Offline state cannot enter repair");
     planter::fixture.received=true;
+    network_setup::enabled=true;
+    settings_ui::openConnection();tap(350,437);
+    require(std::string(settings_ui::title())=="设备配网","Connection page exposes unified setup");
+    networks();tap(200,260);render();tap(200,184);
+    for(unsigned i=0;i<8;++i)key(i);
+    const auto joinsBefore=requests;tap(405,446);
+    require(network_setup::starts==1 && requests==joinsBefore && settings_ui::page==settings_ui::Page::NetworkProgress,
+      "Unified password submission goes to setup worker, not screen-only Wi-Fi");
+    render();tap(350,420);
+    require(settings_ui::page==settings_ui::Page::NetworkProgress,"Cannot restart a running setup transaction");
+    network_setup::fixture.phase=network_setup::Phase::Done;tap(350,420);
+    require(settings_ui::page==settings_ui::Page::Network,"Completed setup offers retry explicitly");
     {
       using namespace connection_ui;
       planter::State s; s.received=s.wifi=s.yoyoEnabled=true;s.receivedMs=100;
@@ -294,6 +307,14 @@ int main(int argc, char **argv) {
         strcpy(planter::fixture.yoyoStage,"pairing_timeout");planter::fixture.yoyoFailure=99;
         frame(output,(prefix+"yoyo-timeout").c_str());
         planter::fixture.yoyoStage[0]=0;planter::fixture.yoyoFailure=-1;
+        settings_ui::page=settings_ui::Page::Network;
+        frame(output,(prefix+"network-setup").c_str());
+        settings_ui::page=settings_ui::Page::NetworkProgress;
+        for(auto phase:{network_setup::Phase::WaitingXiao,network_setup::Phase::Done,network_setup::Phase::Failed}) {
+          network_setup::fixture.phase=phase;network_setup::fixture.startedMs=now;
+          if(phase==network_setup::Phase::Failed)strcpy(network_setup::fixture.error,"wifi_connection_failed");
+          frame(output,(prefix+"network-step-"+std::to_string(unsigned(phase))).c_str());
+        }
       }
     }
     std::cout << "PASS: " << checks << " native settings checks (fixture networks; no I/O)\n";

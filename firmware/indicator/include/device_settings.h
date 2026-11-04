@@ -50,6 +50,9 @@ bool requestScan();                   // Asynchronous; strongest 10 unique SSIDs
 bool requestConnect(const char *ssid, const char *password);
 bool restoreDefaultWifi();            // Select config.h network; save only after success.
 bool requestReconnect();              // Retry current credentials without erasing NVS.
+bool requestTemporaryConnect(const char* ssid,const char* password);
+bool configurePlanterNetwork(const char* ssid,const char* password,const char* address);
+bool updatePlanterAddress(const char* address); // Worker-only discovery result.
 
 // Internal network-task API. UI callers must not invoke service() or WiFi.*.
 void service();

@@ -1,6 +1,12 @@
 #pragma once
-#if __has_include("local_config.h")
+#if __has_include("local_config.h") && !defined(RP_HOST_FIXTURE)
 #include "local_config.h"
+#endif
+#ifndef PLANTER_DEVICE_ID
+#define PLANTER_DEVICE_ID ""
+#endif
+#ifndef PLANTER_SETUP_PASSWORD
+#define PLANTER_SETUP_PASSWORD ""
 #endif
 #ifndef PLANTER_WIFI_SSID
 #define PLANTER_WIFI_SSID "RoboPlanter-XXXX"

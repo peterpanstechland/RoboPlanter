@@ -31,6 +31,14 @@ for %%S in (settings-mutex settings-queue client-mutex commands-queue stops-queu
   planter_network_test.exe %%S
   if errorlevel 1 exit /b 1
 )
+cl.exe /nologo /std:c++17 /EHsc /utf-8 /W4 /D_CRT_SECURE_NO_WARNINGS /I"$rpStubs" /I"$rpJson" "$rpRoot\tests\settings\wifi_setup_test.cpp" /Fe:wifi_setup_test.exe
+if errorlevel 1 exit /b 1
+wifi_setup_test.exe
+if errorlevel 1 exit /b 1
+cl.exe /nologo /std:c++17 /EHsc /utf-8 /W4 /D_CRT_SECURE_NO_WARNINGS /I"$rpStubs" /I"$rpInclude" /I"$rpJson" "$rpRoot\tests\settings\network_setup_test.cpp" /Fe:network_setup_test.exe
+if errorlevel 1 exit /b 1
+network_setup_test.exe
+if errorlevel 1 exit /b 1
 "@ | Set-Content -LiteralPath $rpBatch -Encoding utf8
 & $env:ComSpec /d /c $rpBatch
 if ($LASTEXITCODE -ne 0) { throw 'Device settings checks failed.' }
