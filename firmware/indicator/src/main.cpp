@@ -34,6 +34,7 @@ size_t photoIndex=0;
 constexpr uint16_t kWarning=0xF60C, kDanger=0xEAE9, kAqua=0xA6FD;
 struct Rect { int16_t x,y,w,h; };
 constexpr Rect kBack{16,12,44,44}, kTheme{322,12,90,44}, kSettings{420,12,44,44};
+constexpr Rect kConnection{274,12,44,44};
 constexpr Rect kControls{24,374,432,52}, kDismiss{368,76,88,40};
 constexpr Rect kHardware[]={{24,143,210,86},{246,143,210,86},{24,241,210,86},{246,241,210,86}};
 constexpr planter::Action kActions[]={planter::Action::Water,planter::Action::StopWater,planter::Action::Light,planter::Action::Print};
@@ -397,6 +398,10 @@ void tickCompanion(uint32_t now) {
 void handle(ui::Gesture gesture,const State &s,uint32_t now) {
   tickCompanion(now);
   if(gesture==ui::Gesture::None)return;
+  if(gesture==ui::Gesture::Tap && tapped(kConnection)) {
+    garden_ui::close();model.closeThemes();controlsOpen=false;confirmOpen=false;
+    settings_ui::openConnection();return;
+  }
   if(gesture==ui::Gesture::Tap && tapped(kSettings)) {
     if(settings_ui::isOpen())settings_ui::close();
     else {garden_ui::close();model.closeThemes();controlsOpen=false;confirmOpen=false;settings_ui::open();}

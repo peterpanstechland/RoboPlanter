@@ -47,6 +47,7 @@ class BleSession {
     if (ticketFor(connectionId).valid()) notifications_ = enabled;
   }
   bool mayReply(const BleTicket& ticket) const { return matches(ticket) && notifications_; }
+  bool notificationsEnabled() const { return connected_ && notifications_; }
 
  private:
   uint64_t generation_ = 0;

@@ -110,6 +110,9 @@ uint8_t currentPeer[6]={};
 uint8_t pairRepairPeer[6]={};
 robo::Result pairRepairResult;
 uint32_t pairRepairStarted=0;
+robo::Result pairReconnectResult;
+bool pairReconnecting=false, pairToolSeen=false;
+uint32_t pairReconnectStarted=0, pairToolCount=0, pairToolAt=0;
 robo::BlePreparedWrite<MaxBleBytes> blePreparedWrite;
 String deviceId;
 bool sen54Detected = false;
@@ -663,6 +666,12 @@ void stateJson(JsonDocument& document) {
     auto yoyo=document.createNestedObject("yoyo");
     yoyo["enabled"]=bool(ROBO_ENABLE_BONDED_YOYO && companionStorage);
     yoyo["repair_supported"]=true;
+    yoyo["reconnect_supported"]=true;
+    yoyo["reconnecting"]=pairReconnecting;
+    yoyo["notifications"]=bleSession.notificationsEnabled();
+    yoyo["tool_seen"]=pairToolSeen;
+    yoyo["tool_count"]=pairToolCount;
+    if(pairToolSeen)yoyo["last_tool_age_ms"]=uint32_t(now-pairToolAt);
     yoyo["repairing"]=bondAccess.repairing();
     yoyo["connect_count"]=pairConnections;
     yoyo["security_requests"]=pairRequests;
@@ -1005,6 +1014,37 @@ void httpCommand() {
   if (command.hasEffect && !jsonString(object["effect"], command.effect)) {
     sendError(400, "invalid_light_fields"); return;
   }
+  if(command.action=="reconnect_yoyo") {
+    if(object.size()!=2){sendError(400,"unexpected_fields",command.requestId.c_str());return;}
+    bool disconnect=false, advertise=false;
+    uint8_t peer[6]={};
+    robo::Result result;result.requestId=command.requestId;result.status="rejected";result.error="reconnect_unavailable";
+    {
+      Lock guard(bleMutex);
+      if(pairReconnectResult.requestId==command.requestId)result=pairReconnectResult;
+      else if(ROBO_ENABLE_BONDED_YOYO && companionStorage && bondAccess.paired() &&
+              !bondAccess.repairing() && !pairReconnecting) {
+        disconnect=bondAccess.connected();advertise=!disconnect;
+        memcpy(peer,currentPeer,6);
+        pairReconnecting=disconnect;pairReconnectStarted=millis();
+        pairStage=disconnect?"reconnecting":"reconnect_ready";
+        result.ok=true;result.status=disconnect?"accepted":"completed";result.error="";
+        pairReconnectResult=result;
+      }
+    }
+    // Disconnect only the admitted phone. Preserve bond, printer BLE client,
+    // accepted actuator jobs and their request IDs. Never reset the BLE stack.
+    if(disconnect && esp_ble_gap_disconnect(peer)!=ESP_OK) {
+      Lock guard(bleMutex);
+      pairReconnecting=false;pairStage="reconnect_failed";
+      pairReconnectResult.ok=false;pairReconnectResult.status="failed";
+      pairReconnectResult.error="phone_disconnect_failed";
+    }
+    if(advertise)BLEDevice::startAdvertising();
+    {Lock guard(bleMutex);if(pairReconnectResult.requestId==command.requestId)result=pairReconnectResult;}
+    StaticJsonDocument<384> output;resultJson(output,result);
+    sendJson(result.ok?(result.status=="accepted"?202:200):409,output);return;
+  }
   if(command.action=="repair_yoyo") {
     if(object.size()!=2){sendError(400,"unexpected_fields",command.requestId.c_str());return;}
     bool start=false;
@@ -1012,7 +1052,7 @@ void httpCommand() {
     {
       Lock guard(bleMutex);
       if(pairRepairResult.requestId==command.requestId)result=pairRepairResult;
-      else if(ROBO_ENABLE_BONDED_YOYO && companionStorage && bondAccess.beginRepair()) {
+      else if(ROBO_ENABLE_BONDED_YOYO && companionStorage && !pairReconnecting && bondAccess.beginRepair()) {
         memcpy(pairRepairPeer,bondAccess.owner(),6);
         pairRepairStarted=millis();pairStage="repairing";
         result.ok=true;result.status="accepted";result.error="";pairRepairResult=result;start=true;
@@ -1066,6 +1106,9 @@ void httpResult() {
   }
   {
     Lock guard(bleMutex);
+    if(pairReconnectResult.requestId==requestId) {
+      StaticJsonDocument<384> output;resultJson(output,pairReconnectResult);sendJson(200,output);return;
+    }
     if(pairRepairResult.requestId==requestId) {
       StaticJsonDocument<384> output;resultJson(output,pairRepairResult);sendJson(200,output);return;
     }
@@ -1341,6 +1384,7 @@ class ServerCallbacks : public BLEServerCallbacks {
       if (accepted) {
         pairStage="authenticating";pairStarted=millis();
         pairAuthMode=pairFailure=-1;pairStackSuccess=false;pairEncryptionError=0;
+        pairToolSeen=false;pairToolCount=0;
         memcpy(currentPeer,param->connect.remote_bda,6);
         bondAccess.connect(currentPeer);
         xQueueReset(bleQueue);
@@ -1375,6 +1419,10 @@ class ServerCallbacks : public BLEServerCallbacks {
         if(bondAccess.authorized())pairStage="paired_idle";
         else if(!strcmp(pairStage,"authenticating") || !strcmp(pairStage,"waiting_for_pin"))pairStage="link_lost";
         bondAccess.disconnect();
+        if(pairReconnecting) {
+          pairReconnecting=false;pairStage="reconnect_ready";
+          pairReconnectResult.ok=true;pairReconnectResult.status="completed";pairReconnectResult.error="";
+        }
         blePreparedWrite.reset();
         bleCharacteristic->setValue("RoboPlanter/1");
         xQueueReset(bleQueue);
@@ -1394,10 +1442,12 @@ void bleTask(void*) {
     if (xQueueReceive(bleQueue, &job, portMAX_DELAY) == pdTRUE) {
       Lock guard(bleMutex);
       if (!bleSession.matches(job.ticket)) continue;
+      if(pairReconnecting){bleReply(job.ticket,"E:BUSY");continue;}
       if(ROBO_ENABLE_BONDED_YOYO && !bondAccess.authorized()){bleReply(job.ticket,"E:PAIR");continue;}
       // Serialize the short command commit with disconnect. Already accepted
       // pump/print work retains its local deadline/result; it is not replayed.
       const std::string response = handleBle(job.text);
+      pairToolSeen=true;pairToolAt=millis();++pairToolCount;
       bleReply(job.ticket, response);
     }
   }
@@ -1545,6 +1595,11 @@ void setup() {
 void loop() {
   {
     Lock guard(bleMutex);
+    if(pairReconnecting && uint32_t(millis()-pairReconnectStarted)>5000) {
+      pairReconnecting=false;pairStage="reconnect_failed";
+      pairReconnectResult.ok=false;pairReconnectResult.status="failed";
+      pairReconnectResult.error="phone_disconnect_timeout";
+    }
     if(bondAccess.repairing() && pairRepairResult.status=="accepted" && uint32_t(millis()-pairRepairStarted)>10000) {
       // A late remove callback may still complete recovery. Do not admit any
       // phone while key deletion has an unknown outcome.

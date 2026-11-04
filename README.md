@@ -45,6 +45,7 @@ SEN54已取代DHT20和旧Air Quality；UV已换成Light v1.2。SEN54不提供CO�
 | Robot Phone入口、配对、自然对话与场景 | [YOYO陪伴与控制](docs/handbook/yoyo-companion.md) |
 | 创建和上传Skill | [荣耀平台教程](docs/handbook/honor-platform.md) |
 | BLE配对、命令与回包 | [BLE接入](docs/handbook/ble-integration.md) · [完整设备协议](docs/device-protocol.md) |
+| Skill分析与Phone–XIAO–Indicator全链路 | [三端工程API：配对、时序、读写、结果与恢复](docs/handbook/system-api.md) |
 | 中文打印与日签 | [打印机教程](docs/handbook/uart-printer.md) · [日签设计](docs/handbook/daily-ticket.md) |
 | 固件与界面 | [XIAO](firmware/xiao/README.md) · [Indicator](firmware/indicator/README.md) · [植物养成](docs/indicator-garden.md) |
 | 检查、故障与未完成项 | [验收](docs/handbook/acceptance.md) · [排障](docs/handbook/troubleshooting.md) · [进度](docs/handbook/roadmap-evidence.md) |

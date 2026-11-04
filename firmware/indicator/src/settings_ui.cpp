@@ -1,6 +1,7 @@
 #include "settings_ui.h"
 #include "device_settings.h"
 #include "planter_presentation.h"
+#include "connection_presentation.h"
 #include "indicator_board.h"
 #include "ui_text.h"
 #include "ui_theme.h"
@@ -18,6 +19,7 @@ constexpr Rect kChinese{24, 117, 208, 48}, kEnglish{248, 117, 208, 48};
 constexpr Rect kWifi{16, 181, 216, 76}, kLightSettings{248,181,216,76}, kPlanter{16, 394, 216, 54}, kAbout{248, 394, 216, 54};
 constexpr Rect kCompanion{24,332,208,60}, kCalibration{248,332,208,60}, kPairPhone{24,174,432,54}, kAutoPrint{24,316,432,54};
 constexpr Rect kRepairConfirm{24,390,208,64},kRepairCancel{248,390,208,64};
+constexpr Rect kRepairLink{24,386,208,48},kYoyoCheck{248,386,208,48};
 constexpr Rect kPairedNetwork{24, 411, 208, 52}, kNetworkSettings{248, 411, 208, 52};
 constexpr Rect kMinus{24, 321, 56, 56}, kSlider{96, 321, 288, 56}, kPlus{400, 321, 56, 56};
 constexpr Rect kRefresh{16, 422, 100, 48}, kPrevious{124, 422, 64, 48};
@@ -204,7 +206,7 @@ void drawWifi(const ui_theme::Theme &t) {
   button(kRefresh, tr("刷新", "Refresh"), t, false, state.ready && !state.scanning, 16);
   button(kPrevious, "<", t, false, networkPage > 0 && !state.scanning);
   button(kNext, ">", t, false, listCount > 5 && networkPage == 0 && !state.scanning);
-  button(kDefault, tr("恢复默认连接", "Restore default"), t, false, state.ready, 16);
+  button(kDefault, tr("连接花盆网络", "Planter network"), t, false, state.ready, 16);
 }
 void drawPassword(const ui_theme::Theme &t) {
   text(24, 82, selectedSsid, t.ink, 24);
@@ -254,43 +256,78 @@ void drawPlanter(const ui_theme::Theme &t, uint32_t now) {
   const auto state = planter::snapshot();
   const bool english = device_settings::getLanguage() == Language::English;
   const auto status = endpoint.configured ? planter_presentation::link(state, wifi, now) : planter_presentation::Link::Configuration;
-  text(24, 82, planter_presentation::linkText(status, english), t.ink, 24);
-  text(24, 122, tr("配对网络", "Paired network"), t.muted, 16);
-  text(24, 145, endpoint.ssid[0] ? endpoint.ssid : "--", t.ink, 24);
-  text(24, 184, tr("当前网络", "Current network"), t.muted, 16);
-  text(24, 207, wifi.connectedSsid[0] ? wifi.connectedSsid : tr("未连接", "Not connected"), t.ink, 24);
-  text(24, 246, tr("花盆地址", "Planter address"), t.muted, 16);
-  text(24, 269, endpoint.address[0] ? endpoint.address : "--", t.ink, 16);
-  char detail[64];
-  snprintf(detail, sizeof(detail), "HTTP %d", static_cast<int>(state.httpStatus));
-  text(24, 302, state.httpStatus ? detail : tr("尚未收到有效响应", "No verified response yet"), t.muted, 16);
+  auto &g=indicator::display();
+  const bool live=planter::fresh(state,now);
+  const bool wifiOk=wifi.phase==WifiPhase::Connected && wifi.planterNetwork;
+  const auto phone=connection_ui::phonePhase(state,now);
+  char detail[112];
+  auto row=[&](int y,const char* label,const char* value,const char* note,bool good) {
+    g.fillRoundRect(24,y,432,76,9,t.surface);
+    g.fillCircle(40,y+17,4,good?t.accent:t.muted);
+    text(52,y+7,label,t.muted,16,392);
+    text(36,y+28,value,t.ink,24,408);
+    text(36,y+55,note,t.muted,16,408);
+  };
+  const char* network=wifi.connectedSsid[0]?wifi.connectedSsid:wifi.targetSsid;
+  if(wifi.phase==WifiPhase::Connecting)
+    snprintf(detail,sizeof(detail),tr("第 %u 次尝试 · %lu 秒 / 20 秒","Attempt %u · %lu / 20 seconds"),wifi.attempt,static_cast<unsigned long>((now-wifi.attemptStartedMs)/1000));
+  else if(wifi.retryAtMs && int32_t(wifi.retryAtMs-now)>0)
+    snprintf(detail,sizeof(detail),tr("%s · %lu 秒后自动重试","%s · retry in %lus"),errorText(wifi.error),static_cast<unsigned long>((wifi.retryAtMs-now+999)/1000));
+  else snprintf(detail,sizeof(detail),"%s",wifiOk?(wifi.saved?tr("网络已保存，断电后自动连接","Saved network; reconnects after power-on"):tr("已联网，但网络设置未保存","Connected; Wi-Fi settings not saved")):
+    wifi.phase==WifiPhase::Connected?tr("请在网络设置连接花盆网络","Select the planter network in Wi-Fi settings"):errorText(wifi.error));
+  row(82,"01  Indicator > Wi-Fi",network[0]?network:phaseText(wifi),detail,wifiOk);
+  if(live)snprintf(detail,sizeof(detail),tr("%lu 秒前更新 · HTTP %d","Updated %lus ago · HTTP %d"),static_cast<unsigned long>((now-state.receivedMs)/1000),state.httpStatus);
+  else if(status==planter_presentation::Link::Authentication)snprintf(detail,sizeof(detail),"%s",tr("屏幕与主控密钥不一致，重配手机无效","Screen / XIAO token mismatch; check config"));
+  else if(status==planter_presentation::Link::WrongNetwork)snprintf(detail,sizeof(detail),"%s: %s",tr("目标网络","Target Wi-Fi"),endpoint.ssid);
+  else snprintf(detail,sizeof(detail),"%s%s",state.checking?tr("检查中 · ","Checking · "):"",endpoint.address[0]?endpoint.address:"--");
+  row(164,"02  Indicator > XIAO / HTTP",planter_presentation::linkText(status,english),detail,live);
+  row(246,"03  Robot Phone > XIAO / BLE",connection_ui::title(phone,english),
+    live&&state.yoyoPaired?tr("无需常连；说“读取工位状态”验证","On demand: say Read desk status to verify"):
+    tr("手机连主控；屏幕只负责显示配对码","Phone pairs with XIAO; screen shows its code"),live&&state.yoyoPaired);
   button(kCompanion, tr("YOYO 与场景小票", "YOYO / receipts"), t, false, true, 16);
   button(kCalibration, tr("传感器校准", "Sensor calibration"), t, false, true, 16);
-  button(kPairedNetwork, tr("连接配对网络", "Use paired Wi-Fi"), t, false, wifi.ready, 16);
+  button(kPairedNetwork,wifiOk?(state.checking?tr("正在检查","Checking"):tr("立即检查链路","Check link now")):
+    wifi.phase==WifiPhase::Connected?tr("连接花盆网络","Use planter Wi-Fi"):tr("重新连接 Wi-Fi","Reconnect Wi-Fi"),t,false,
+    wifi.ready && wifi.phase!=WifiPhase::Connecting && !wifi.scanning && !state.checking && !state.commandBlocked,16);
   button(kNetworkSettings, tr("无线网络设置", "Wi-Fi settings"), t, false, true, 16);
 }
 void drawYoyo(const ui_theme::Theme &t,uint32_t now) {
   const auto state=planter::snapshot();
-  const bool ready=planter::fresh(state,now) && !state.commandBlocked;
-  text(24,90,state.yoyoRepairing?tr("正在修复手机配对","Repairing phone pairing"):
-    state.yoyoConnected?tr("手机已安全连接","Phone securely connected"):
-    !strcmp(state.yoyoStage,"pairing_timeout")?tr("手机认证超时，请重新配对","Phone timed out. Pair again"):
-    state.yoyoPaired?tr("已配对，等待手机连接","Paired. Waiting for phone"):
-    tr("首次连接需要手机配对","Pair your phone on first use"),t.ink,24);
-  text(24,130,state.yoyoPairing?tr("在手机输入下方六位码","Enter the six digits below on your phone"):
-    state.yoyoPaired?tr("连接异常时可修复手机配对","Use repair if the phone cannot connect"):
-    tr("先点下方按钮，再连接手机蓝牙","Tap below, then connect in phone Bluetooth"),t.muted,16);
-  button(kPairPhone,state.yoyoRepairing?tr("正在修复，请稍候","Repairing, please wait"):
-    state.yoyoPairing?tr("配对窗口已开启","Pairing window open"):state.yoyoPaired?tr("修复手机配对","Repair phone pairing"):tr("显示六位配对码","Show pairing code"),t,false,
-    ready && state.yoyoEnabled && !state.yoyoPairing && !state.yoyoRepairing && (!state.yoyoPaired || state.yoyoRepairSupported),24);
-  if(state.yoyoPairing && state.yoyoPin>=100000 && state.yoyoPin<=999999) {
+  const bool live=planter::fresh(state,now),ready=live && !state.commandBlocked;
+  const bool english=device_settings::getLanguage()==Language::English;
+  const auto phase=connection_ui::phonePhase(state,now);
+  text(24,90,connection_ui::title(phase,english),t.ink,24);
+  text(24,130,connection_ui::hint(phase,english),t.muted,16);
+  button(kPairPhone,state.commandBlocked?tr("正在提交，请稍候","Request pending"):
+    state.yoyoRepairing||state.yoyoReconnecting?tr("正在处理连接","Working on connection"):
+    state.yoyoPaired?tr("重连手机（保留绑定）","Reconnect; keep bond"):
+    connection_ui::secondsLeft(state,now)?tr("配对窗口已开启","Pairing window open"):tr("显示六位配对码","Show pairing code"),t,false,
+    ready && state.yoyoEnabled && !state.yoyoRepairing && !state.yoyoReconnecting &&
+    (state.yoyoPaired?state.yoyoReconnectSupported:!state.yoyoLinkConnected&&!connection_ui::secondsLeft(state,now)),24);
+  if(connection_ui::showPin(state,now)) {
     char pin[24];snprintf(pin,sizeof(pin),"PIN  %06lu",static_cast<unsigned long>(state.yoyoPin));text(80,240,pin,t.accent,48);
-  } else text(24,253,!strcmp(state.yoyoStage,"repair_restart_required")?tr("修复未完成，请重启花盆主控","Repair incomplete. Restart planter"):
-    state.yoyoPaired?tr("正常重连无需操作；修复前会再次确认","Normal reconnect needs no repair" ):
-    tr("六位码在此显示，两分钟有效","Six digits appear here, valid for two minutes"),t.muted,16);
+    char countdown[64];snprintf(countdown,sizeof(countdown),tr("剩余 %lu 秒 · 仅在手机系统蓝牙输入","%lus left · enter in phone Bluetooth"),static_cast<unsigned long>(connection_ui::secondsLeft(state,now)));
+    text(24,292,countdown,t.muted,16);
+  } else {
+    text(24,244,!live?tr("主控离线，不显示旧码或旧连接状态","XIAO offline; old code is hidden"):
+      state.yoyoNotifications?tr("手机已订阅回复通道","Phone subscribed to replies"):
+      state.yoyoConnected?tr("蓝牙已加密，等待工具订阅回复","Encrypted link; waiting for tool subscription"):
+      state.yoyoPaired?tr("已保存绑定，无需再次输入配对码","Bond saved; no code needed on reconnect"):
+      tr("六位码在此显示，两分钟有效","Code appears here for two minutes"),t.muted,16);
+    char detail[112];
+    if(live && state.yoyoToolSeen)snprintf(detail,sizeof(detail),tr("最近请求 %lu 秒前 · 本次连接 %lu 条","Last request %lus ago · session count %lu"),
+      static_cast<unsigned long>((uint64_t(state.yoyoToolAgeMs)+now-state.receivedMs)/1000),static_cast<unsigned long>(state.yoyoToolCount));
+    else snprintf(detail,sizeof(detail),"%s",tr("说“你好”不会验证硬件连接","Saying hello does not test hardware"));
+    if(live && phase==connection_ui::PhonePhase::Failed)snprintf(detail,sizeof(detail),"%s",connection_ui::failureHint(state,english));
+    if(live && !strcmp(state.yoyoStage,"repair_restart_required"))snprintf(detail,sizeof(detail),"%s",tr("修复超时，请重启主控后检查","Repair timed out; restart XIAO, then check"));
+    if(live && (!strcmp(state.commandStatus,"failed")||!strcmp(state.commandStatus,"rejected")||state.uncertain))
+      snprintf(detail,sizeof(detail),"%s",state.uncertain?tr("请求结果未知，先检查，不自动重发","Outcome unknown; check before retry"):state.commandError);
+    text(24,278,detail,t.muted,16);
+  }
   button(kAutoPrint,state.autoPrint?tr("场景自动打印：开","Scene auto-print: ON"):tr("场景自动打印：关","Scene auto-print: OFF"),t,state.autoPrint,ready&&state.autoPrintKnown,24);
-  text(24,392,tr("同一场景五分钟内仅打印一次","Same scene: at most once per five minutes"),t.muted,16);
-  text(24,423,tr("关闭后仍可主动要求打印","Explicit print requests still work when off"),t.muted,16);
+  button(kRepairLink,tr("重新绑定手机","Rebind phone"),t,false,ready&&state.yoyoPaired&&state.yoyoRepairSupported&&!state.yoyoRepairing&&!state.yoyoReconnecting,16);
+  button(kYoyoCheck,tr("检查链路","Check link"),t,false,true,16);
+  text(24,447,tr("重连保留设置；重新绑定需确认","Reconnect keeps settings; rebind needs confirmation"),t.muted,16);
 }
 void drawRepairYoyo(const ui_theme::Theme &t,uint32_t now) {
   const auto state=planter::snapshot();
@@ -318,6 +355,7 @@ void brightness(uint8_t value) {
 
 bool isOpen() { return opened; }
 void open() { wipePassword(); opened = true; page = Page::Menu; settingsRejected = false; }
+void openConnection() { open(); page=Page::Planter; planter::requestRefresh(); }
 void close() { wipePassword(); calibrationCapture.cancel(); selectedSsid[0] = 0; opened = false; page = Page::Menu; }
 void back() {
   wipePassword();
@@ -388,10 +426,12 @@ bool handle(ui::Gesture gesture, const ui::TouchGate &touch, uint32_t now) {
     }
   } else if(page==Page::Yoyo) {
     const auto state=planter::snapshot();
+    if(tapped(kYoyoCheck,touch)){page=Page::Planter;planter::requestRefresh();return true;}
     if(planter::fresh(state,now) && !state.commandBlocked) {
-      if(tapped(kPairPhone,touch) && state.yoyoEnabled && !state.yoyoPairing && !state.yoyoRepairing) {
-        if(state.yoyoPaired) {if(state.yoyoRepairSupported)page=Page::RepairYoyo;}
-        else planter::submit(planter::Action::PairYoyo);
+      if(tapped(kRepairLink,touch) && state.yoyoPaired && state.yoyoRepairSupported && !state.yoyoRepairing && !state.yoyoReconnecting)page=Page::RepairYoyo;
+      else if(tapped(kPairPhone,touch) && state.yoyoEnabled && !state.yoyoRepairing && !state.yoyoReconnecting) {
+        if(state.yoyoPaired) {if(state.yoyoReconnectSupported)planter::submit(planter::Action::ReconnectYoyo);}
+        else if(!state.yoyoLinkConnected && !connection_ui::secondsLeft(state,now))planter::submit(planter::Action::PairYoyo);
       }
       else if(tapped(kAutoPrint,touch) && state.autoPrintKnown)planter::submit(planter::Action::AutoPrint,!state.autoPrint);
     }
@@ -400,7 +440,13 @@ bool handle(ui::Gesture gesture, const ui::TouchGate &touch, uint32_t now) {
     else if(tapped(kCalibration,touch))page=Page::Calibration;
     else if (tapped(kNetworkSettings, touch)) showWifi();
     else if (tapped(kPairedNetwork, touch) && device_settings::wifiState().ready) {
-      if (device_settings::restoreDefaultWifi()) showWifi();
+      const auto wifi=device_settings::wifiState();
+      const auto state=planter::snapshot();
+      if(!state.commandBlocked && !state.checking && !wifi.scanning && wifi.phase!=WifiPhase::Connecting) {
+        if(wifi.phase==WifiPhase::Connected && wifi.planterNetwork)planter::requestRefresh();
+        else if(wifi.phase==WifiPhase::Connected)device_settings::restoreDefaultWifi();
+        else device_settings::requestReconnect();
+      }
     }
   } else if (page == Page::Wifi) {
     const auto state = device_settings::wifiState();

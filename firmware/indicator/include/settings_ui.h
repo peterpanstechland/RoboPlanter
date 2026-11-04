@@ -6,6 +6,7 @@
 namespace settings_ui {
 bool isOpen();
 void open();
+void openConnection();
 void close();
 void back();
 const char *title();

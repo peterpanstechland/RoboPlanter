@@ -20,6 +20,7 @@ struct State {
   uint32_t receivedMs = 0, sampleAgeMs = 0;
   uint32_t networkRevision = 0; // A new Wi-Fi selection invalidates old capability data.
   bool ageKnown = false;
+  bool checking = false;
   char deviceId[49] = {}, networkError[80] = {};
   NetworkFailure networkFailure = NetworkFailure::None;
   int16_t httpStatus = 0;
@@ -29,6 +30,10 @@ struct State {
   bool waterAllowed = false;
   bool yoyoEnabled=false, yoyoPaired=false, yoyoConnected=false, yoyoPairing=false;
   bool yoyoLinkConnected=false, yoyoRepairSupported=false, yoyoRepairing=false;
+  bool yoyoReconnectSupported=false, yoyoReconnecting=false, yoyoNotifications=false;
+  bool yoyoToolSeen=false;
+  uint32_t yoyoWindowMs=0, yoyoToolAgeMs=0, yoyoToolCount=0;
+  int16_t yoyoFailure=-1;
   char yoyoStage[32]={};
   uint32_t yoyoPin=0;
   bool autoPrintKnown=false, autoPrint=true;
@@ -61,11 +66,12 @@ struct State {
   bool commandBlocked = false, uncertain = false;
   uint32_t commandStartedMs = 0;
 };
-enum class Action : uint8_t { Water, StopWater, Light, Print, FocusStart, FocusPause, FocusResume, FocusReset, PairYoyo, AutoPrint, RepairYoyo };
-inline bool isPairing(Action a) {return a==Action::PairYoyo || a==Action::RepairYoyo;}
+enum class Action : uint8_t { Water, StopWater, Light, Print, FocusStart, FocusPause, FocusResume, FocusReset, PairYoyo, AutoPrint, RepairYoyo, ReconnectYoyo };
+inline bool isPairing(Action a) {return a==Action::PairYoyo || a==Action::RepairYoyo || a==Action::ReconnectYoyo;}
 inline bool isFocus(Action a) {return a>=Action::FocusStart && a<=Action::FocusReset;}
 bool begin();
 State snapshot();
+bool requestRefresh(); // Read-only check, never replays a hardware command.
 bool fresh(const State &state, uint32_t now);
 bool submit(Action action, bool lightOn = false, const PrintReceipt *receipt = nullptr, uint16_t focusMinutes = 25);
 void acknowledgeUncertain();

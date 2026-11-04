@@ -1,5 +1,7 @@
 # RoboPlanter 设备通信协议
 
+当前三端接入以[Skill 与三端工程 API](handbook/system-api.md)为入口：本地 Skill 1.0.2、加密绑定 BLE、Indicator 局域网 HTTP、XIAO 直连 BLE 打印机。1.0.2补充逐段连接诊断与保留绑定重连指引，平台安装版本须独立核对。本文后半保留早期串口打印与单次读取接口的兼容记录；它们不是当前 Skill 的回退链路。
+
 ## 两板连接
 
 首版由 XIAO 建立 2.4 GHz Wi-Fi 热点，SenseCAP Indicator 连接该热点。XIAO 默认地址为 `192.168.4.1`；两块板分别供电，不连接 TX/RX、I²C 或 USB 数据线。YOYO 独立 Skill 的目标路径是手机官方 BLE 工具直连 XIAO；Indicator 使用 HTTP。两种入口最终调用同一个本地设备控制逻辑。
@@ -10,7 +12,7 @@
 
 ## YOYO 调用入口
 
-主交互路径为 **YOYO 独立 Skill → 官方 `ble_send_command` → XIAO BLE**；当前0.4.0使用SC+MITM加密绑定和V协议，Skill正文不含HTTP令牌。手机实时土壤、温度和湿度查询已验证。旧0.2.x单次读取接口仅保留作历史说明；当前能力与真机边界见[YOYO日常交互](handbook/yoyo-companion.md)。
+主交互路径为 **YOYO 独立 Skill → 官方 `ble_send_command` → XIAO BLE**；当前源码1.0.1使用SC+MITM加密绑定和V协议，Skill正文不含HTTP令牌。手机实时土壤、温度和湿度查询已有验收记录；1.0.1改用校准土壤百分比，手机最终复验与平台安装版本须单独核对。旧0.2.x单次读取接口仅保留作历史说明；当前能力与真机边界见[YOYO日常交互](handbook/yoyo-companion.md)。
 
 Indicator 独立使用下述 HTTP 协议。已有 [MCP 桥接](../integrations/mcp/README.md) 和 [云 MCP/MQTT 网关](../integrations/cloud/README.md) 保留为辅助接入，均不是独立 Skill 主线的前置条件；A2A 不需要。MCP 的六个工具将请求映射到同一 HTTP 接口，服务端从环境读取固定地址与令牌。2026-10-26 已经通过电脑上的只读网关，实测公网 MCP → MQTT → XIAO → Indicator 土壤查询；电脑或网关停止时链路不可用，尚非持续遥测入库。云端所有写操作（包括停泵）仍禁用。详情见 [YOYO 接入说明](../integrations/yoyo/README.md)。
 
@@ -129,7 +131,7 @@ python tools/device_cli.py print 'Hello planter'
 
 ## BLE
 
-当前YOYO 0.4.0开启ROBO_ENABLE_BONDED_YOYO后，使用加密配对的V协议，不携带HTTP令牌。完整新查询、共享计时、场景打印及结果解释见[BLE v2教程](handbook/ble-integration.md)。以下token与单次读取格式是未启用绑定模式时的历史调试接口，不是当前Skill回退方案。
+当前YOYO 1.0.1源码开启ROBO_ENABLE_BONDED_YOYO后，使用加密配对的V协议，不携带HTTP令牌。完整新查询、共享计时、场景打印及结果解释见[三端工程API](handbook/system-api.md)与[BLE v2教程](handbook/ble-integration.md)。以下token与单次读取格式是未启用绑定模式时的历史调试接口，不是当前Skill回退方案。
 
 保留附件的服务 UUID `a2f39c10-7e4b-4d21-8a61-0f3bc9d15001`，特征 UUID `a2f39c11-7e4b-4d21-8a61-0f3bc9d15001`。具体短文本格式、长度和回包规则见 [XIAO 固件说明](../firmware/xiao/README.md#ble-protocol-version-1)。BLE 写确认与设备业务回包分开处理；YOYO 查询需启用等待响应。
 

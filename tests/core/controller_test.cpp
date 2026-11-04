@@ -287,7 +287,9 @@ void bleConnectionBoundary() {
   const auto oldJob = session.ticketFor(7);
   CHECK(session.matches(oldJob));
   CHECK(!session.mayReply(oldJob));  // A new peer must subscribe itself.
+  CHECK(!session.notificationsEnabled());
   session.setNotifications(7, true);
+  CHECK(session.notificationsEnabled());
   CHECK(session.mayReply(oldJob));
   CHECK(!session.connect(8));
   CHECK(!session.ticketFor(8).valid());
@@ -296,6 +298,7 @@ void bleConnectionBoundary() {
   CHECK(!session.disconnect(8));  // Rejecting another peer cannot reset the owner.
   CHECK(session.matches(oldJob));
   CHECK(session.disconnect(7));
+  CHECK(!session.notificationsEnabled());
   CHECK(!session.matches(oldJob));
   CHECK(!session.mayReply(oldJob));
 

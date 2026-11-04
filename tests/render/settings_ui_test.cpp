@@ -16,7 +16,7 @@ Arduino_Canvas canvas(480, 480, nullptr);
 device_settings::WifiSnapshot wifi;
 device_settings::Language language = device_settings::Language::Chinese;
 uint8_t light = 80;
-unsigned checks = 0, brightnessWrites = 0, requests = 0, scans = 0, restores = 0;
+unsigned checks = 0, brightnessWrites = 0, requests = 0, scans = 0, restores = 0, reconnects = 0, refreshes = 0;
 std::string requestedSsid, requestedPassword;
 ui::TouchGate gate;
 uint32_t now = 100;
@@ -78,6 +78,7 @@ bool saveBrightness(uint8_t) { return true; }
 WifiSnapshot wifiState() { return wifi; }
 bool requestScan() { ++scans; wifi.scanning = true; wifi.networkCount = 0; return true; }
 bool restoreDefaultWifi() { ++restores; return true; }
+bool requestReconnect() { ++reconnects; return true; }
 bool requestConnect(const char *ssid, const char *password) {
   ++requests; requestedSsid = ssid; requestedPassword = password;
   if (rejectJoin) { wifi.error = WifiError::Busy; return false; }
@@ -90,12 +91,15 @@ unsigned calibrationSaves = 0;
 unsigned lightSaves=0;
 bool allowPairing=false;
 unsigned pairingRequests=0;
+unsigned reconnectRequests=0;
 robo::AutoLightSettings savedLight;
 robo::CalibrationEdit savedEdit;
 State snapshot() { return fixture; }
+bool requestRefresh() { ++refreshes; return true; }
 bool fresh(const State &s, uint32_t) { return s.received && s.wifi; }
 bool submit(Action action, bool, const PrintReceipt*, uint16_t) {
   if(allowPairing && action==Action::RepairYoyo) {++pairingRequests;fixture.commandBlocked=true;return true;}
+  if(allowPairing && action==Action::ReconnectYoyo) {++reconnectRequests;fixture.commandBlocked=true;return true;}
   throw std::runtime_error("Unexpected hardware action from settings UI");
 }
 bool submitCalibration(const robo::CalibrationEdit& edit) { ++calibrationSaves; savedEdit = edit; fixture.calibrationWrite = CalibrationWrite::Queued; return true; }
@@ -162,8 +166,11 @@ int main(int argc, char **argv) {
             "Retry after Busy must retain input until the request is accepted");
     settings_ui::open(); tap(100, 420);
     require(std::string(settings_ui::title()) == "花盆连接", "Planter diagnostics must be reachable");
+    wifi.phase=device_settings::WifiPhase::Failed;
     render(); const auto beforeRestore = restores; tap(100, 437);
-    require(restores == beforeRestore + 1 && std::string(settings_ui::title()) == "无线网络", "Diagnostics must restore only the paired network");
+    require(restores == beforeRestore && reconnects==1 && std::string(settings_ui::title()) == "花盆连接", "Retry must keep the saved network and remain on the status page");
+    wifi.phase=device_settings::WifiPhase::Connected;wifi.planterNetwork=true;tap(100,437);
+    require(refreshes==1 && restores==beforeRestore && reconnects==1,"Online check must only refresh, not reset Wi-Fi");
     settings_ui::open(); tap(100, 420); tap(350, 355); render();
     require(std::string(settings_ui::title()) == "传感器校准", "Calibration entry");
     tap(200, 170); render(); tap(200, 250); render();
@@ -212,19 +219,41 @@ int main(int argc, char **argv) {
     planter::fixture.autoLightWrite=planter::CalibrationWrite::Idle;
     planter::allowPairing=true;
     planter::fixture.yoyoEnabled=planter::fixture.yoyoPaired=planter::fixture.yoyoRepairSupported=true;
+    planter::fixture.yoyoReconnectSupported=true;
     settings_ui::open();tap(100,420);tap(100,360);tap(200,195);
+    require(planter::reconnectRequests==1 && planter::pairingRequests==0 && std::string(settings_ui::title())=="YOYO 伙伴","Primary action reconnects without deleting bond");
+    tap(200,195);require(planter::reconnectRequests==1,"Pending reconnect cannot be repeated");
+    planter::fixture.commandBlocked=false;tap(100,405);
     require(std::string(settings_ui::title())=="修复手机配对" && planter::pairingRequests==0,"Paired phone exposes confirmation without clearing its bond");
     planter::fixture.yoyoLinkConnected=true;tap(100,420);
     require(planter::pairingRequests==0,"Active phone link blocks repair");
     tap(350,420);require(std::string(settings_ui::title())=="YOYO 伙伴" && planter::pairingRequests==0,"Cancelling repair preserves binding");
-    planter::fixture.yoyoLinkConnected=false;tap(200,195);tap(100,420);
+    planter::fixture.yoyoLinkConnected=false;tap(100,405);tap(100,420);
     require(planter::pairingRequests==1 && std::string(settings_ui::title())=="YOYO 伙伴","Confirmed disconnected repair submits once");
-    tap(200,195);require(planter::pairingRequests==1,"Pending repair cannot be repeated");
-    planter::fixture.commandBlocked=false;planter::fixture.yoyoRepairSupported=false;tap(200,195);
+    tap(100,405);require(planter::pairingRequests==1,"Pending repair cannot be repeated");
+    planter::fixture.commandBlocked=false;planter::fixture.yoyoRepairSupported=false;tap(100,405);
     require(std::string(settings_ui::title())=="YOYO 伙伴","Old firmware cannot enter unsupported repair");
-    planter::fixture.yoyoRepairSupported=true;planter::fixture.received=false;tap(200,195);
+    planter::fixture.yoyoRepairSupported=true;planter::fixture.received=false;tap(100,405);
     require(std::string(settings_ui::title())=="YOYO 伙伴","Offline state cannot enter repair");
     planter::fixture.received=true;
+    {
+      using namespace connection_ui;
+      planter::State s; s.received=s.wifi=s.yoyoEnabled=true;s.receivedMs=100;
+      s.yoyoPairing=true;s.yoyoWindowMs=120000;s.yoyoPin=123456;
+      require(showPin(s,100)&&secondsLeft(s,1100)==119,"Pairing window counts down locally");
+      require(!showPin(s,120100)&&phonePhase(s,120100)==PhonePhase::Expired,"Expired PIN is hidden without a new poll");
+      s.received=false;require(!showPin(s,101)&&phonePhase(s,101)==PhonePhase::Offline,"Offline snapshot cannot reveal cached PIN");
+      s.received=true;s.yoyoPaired=true;require(!showPin(s,101),"Bonded phone must not display enrollment PIN");
+      require(phonePhase(s,101)==PhonePhase::PairedIdle,"Saved bond is not a live connection");
+      s.yoyoLinkConnected=true;require(phonePhase(s,101)==PhonePhase::Authenticating,"Link is not yet encrypted");
+      s.yoyoConnected=true;require(phonePhase(s,101)==PhonePhase::Secure,"Encrypted link is not a Skill invocation");
+      s.yoyoToolSeen=true;require(phonePhase(s,101)==PhonePhase::ToolSeen,"Tool invocation evidence");
+      s.yoyoConnected=s.yoyoLinkConnected=false;require(phonePhase(s,101)==PhonePhase::PairedIdle,"Past request is not current connectivity");
+      strcpy(s.yoyoStage,"pairing_timeout");require(phonePhase(s,101)==PhonePhase::Failed,"Authentication timeout remains visible");
+      s.yoyoReconnecting=true;require(phonePhase(s,101)==PhonePhase::Reconnecting,"Recovery progress supersedes old error");
+      s.yoyoPaired=false;s.receivedMs=0xfffffff0;s.yoyoWindowMs=120000;
+      require(secondsLeft(s,0x10)==120,"PIN countdown survives millis wrap");
+    }
     if (argc > 1) {
       const std::filesystem::path output(argv[1]); std::filesystem::create_directories(output);
       for (unsigned lang = 0; lang < 2; ++lang) {
@@ -232,9 +261,11 @@ int main(int argc, char **argv) {
         const std::string prefix = lang ? "en-" : "zh-";
         networks(); settings_ui::open(); frame(output, (prefix + "settings").c_str());
         planter::fixture.receivedMs=now;tap(350,215);frame(output,(prefix+"auto-light").c_str());settings_ui::back();
+        wifi.phase=device_settings::WifiPhase::Connected;wifi.planterNetwork=wifi.saved=true;
+        strcpy(wifi.connectedSsid,"RoboPlanter-demo");planter::fixture.httpStatus=200;
         tap(100, 420); frame(output, (prefix + "planter").c_str());
         tap(100,360);frame(output,(prefix+"yoyo-repair-entry").c_str());
-        tap(200,195);frame(output,(prefix+"yoyo-repair-confirm").c_str());
+        tap(100,405);frame(output,(prefix+"yoyo-repair-confirm").c_str());
         planter::fixture.yoyoLinkConnected=true;frame(output,(prefix+"yoyo-repair-connected").c_str());
         planter::fixture.yoyoLinkConnected=false;settings_ui::back();settings_ui::back();
         planter::fixture.receivedMs = now;
@@ -250,6 +281,19 @@ int main(int argc, char **argv) {
         tap(290, 446); frame(output, (prefix + "symbols").c_str());
         settings_ui::back(); wifi.phase = device_settings::WifiPhase::Failed;
         wifi.error = device_settings::WifiError::AuthFailed; frame(output, (prefix + "failure").c_str());
+        settings_ui::page=settings_ui::Page::Yoyo;
+        planter::fixture.yoyoPaired=false;planter::fixture.yoyoPairing=true;
+        planter::fixture.yoyoPin=123456;planter::fixture.yoyoWindowMs=92000;planter::fixture.receivedMs=now;
+        frame(output,(prefix+"yoyo-code").c_str());
+        planter::fixture.received=false;frame(output,(prefix+"yoyo-offline").c_str());
+        planter::fixture.received=true;planter::fixture.yoyoPaired=true;planter::fixture.yoyoPairing=false;
+        planter::fixture.yoyoConnected=planter::fixture.yoyoNotifications=planter::fixture.yoyoToolSeen=true;
+        planter::fixture.yoyoToolCount=2;planter::fixture.yoyoToolAgeMs=1200;
+        frame(output,(prefix+"yoyo-request").c_str());
+        planter::fixture.yoyoConnected=planter::fixture.yoyoNotifications=planter::fixture.yoyoToolSeen=false;
+        strcpy(planter::fixture.yoyoStage,"pairing_timeout");planter::fixture.yoyoFailure=99;
+        frame(output,(prefix+"yoyo-timeout").c_str());
+        planter::fixture.yoyoStage[0]=0;planter::fixture.yoyoFailure=-1;
       }
     }
     std::cout << "PASS: " << checks << " native settings checks (fixture networks; no I/O)\n";

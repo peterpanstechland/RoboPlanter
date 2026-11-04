@@ -20,6 +20,7 @@ struct Command { Action action; bool on; char id[33]; uint32_t networkRevision; 
   bool calibrationWrite = false; robo::CalibrationEdit calibration;
   bool lightSettingsWrite=false; robo::AutoLightSettings autoLight; };
 State shared;
+bool refreshRequested = false, checking = false;
 robo::CalibrationEdit lastCalibrationEdit;
 uint32_t calibrationNetwork = 0;
 robo::AutoLightSettings lastAutoLight;
@@ -177,6 +178,15 @@ void pollState() {
   next.yoyoLinkConnected=doc["yoyo"]["link_connected"]==true;
   next.yoyoRepairSupported=doc["yoyo"]["repair_supported"]==true;
   next.yoyoRepairing=doc["yoyo"]["repairing"]==true;
+  next.yoyoReconnectSupported=doc["yoyo"]["reconnect_supported"]==true;
+  next.yoyoReconnecting=doc["yoyo"]["reconnecting"]==true;
+  next.yoyoNotifications=doc["yoyo"]["notifications"]==true;
+  next.yoyoToolSeen=doc["yoyo"]["tool_seen"]==true;
+  next.yoyoToolAgeMs=doc["yoyo"]["last_tool_age_ms"] | 0U;
+  next.yoyoToolCount=doc["yoyo"]["tool_count"] | 0U;
+  next.yoyoWindowMs=doc["yoyo"]["window_remaining_ms"] | 0U;
+  next.yoyoFailure=doc["yoyo"]["failure_reason"].is<int16_t>()?doc["yoyo"]["failure_reason"].as<int16_t>():-1;
+  if(next.yoyoWindowMs>120000)next.yoyoWindowMs=0;
   snprintf(next.yoyoStage,sizeof(next.yoyoStage),"%s",doc["yoyo"]["stage"]|"");
   next.yoyoPin=doc["yoyo"]["pin"] | 0U;
   next.autoPrintKnown=doc["auto_print"].is<bool>();next.autoPrint=doc["auto_print"] | true;
@@ -424,6 +434,9 @@ void sendCommand(const Command &command) {
   if(command.action==Action::RepairYoyo && (!state.yoyoRepairSupported || !state.yoyoPaired || state.yoyoLinkConnected || state.yoyoRepairing)) {
     commandResult(command.id,"not_sent","Disconnect phone before repairing pairing",false);return;
   }
+  if(command.action==Action::ReconnectYoyo && (!state.yoyoReconnectSupported || !state.yoyoPaired || state.yoyoRepairing || state.yoyoReconnecting)) {
+    commandResult(command.id,"not_sent","Phone reconnect unavailable",false);return;
+  }
   if (command.action == Action::Print && (!strcmp(state.printerStatus, "recovery_required") ||
       (command.receipt.requiresRaster && !state.printerRaster) ||
       (command.receipt.layout32 && !state.printerLayout32) ||
@@ -435,6 +448,7 @@ void sendCommand(const Command &command) {
   switch (command.action) {
     case Action::PairYoyo:doc["action"]="pair_yoyo";break;
     case Action::RepairYoyo:doc["action"]="repair_yoyo";break;
+    case Action::ReconnectYoyo:doc["action"]="reconnect_yoyo";break;
     case Action::AutoPrint:doc["action"]="auto_print";doc["on"]=command.on;break;
     case Action::FocusStart:doc["action"]="focus_start";doc["duration_ms"]=uint32_t(command.focusMinutes)*60000;break;
     case Action::FocusPause:doc["action"]="focus_pause";break;
@@ -529,6 +543,7 @@ void networkTask(void *) {
         nextPoll = 0;
       }
       shared.wifi = planterNetwork;
+      if (refreshRequested) { nextPoll = 0; refreshRequested = false; }
       xSemaphoreGive(lock);
     }
     if (xQueueReceive(commands, &command, 0) == pdTRUE) {
@@ -538,9 +553,11 @@ void networkTask(void *) {
     const uint32_t now = millis();
     if (planterNetwork && WiFi.status() == WL_CONNECTED) {
       if (!nextPoll || static_cast<int32_t>(now - nextPoll) >= 0) {
+        { xSemaphoreTake(lock, portMAX_DELAY); checking=true; xSemaphoreGive(lock); }
         uploadSoil();
         pollState();
         pollCommandResult();
+        { xSemaphoreTake(lock, portMAX_DELAY); checking=false; xSemaphoreGive(lock); }
         // Keep the period anchored to the start of this cycle. Adding another
         // full second after three HTTP operations made relayed soil expire
         // between otherwise successful uploads. Slow/failed transfers still
@@ -580,6 +597,7 @@ State snapshot() {
   if (!lock) return out;
   xSemaphoreTake(lock, portMAX_DELAY);
   out = shared;
+  out.checking = checking || refreshRequested;
   xSemaphoreGive(lock);
   // A Wi-Fi selection may be queued while the worker is awaiting HTTP. Disable
   // controls immediately; do not reuse the previous network's capabilities.
@@ -594,6 +612,14 @@ bool fresh(const State &state, uint32_t now) {
          state.networkRevision == device_settings::networkRevision() && device_settings::planterNetworkReady() &&
          static_cast<uint64_t>(now - state.receivedMs) + state.sampleAgeMs <= kStaleMs;
 }
+bool requestRefresh() {
+  if (!lock || !device_settings::planterNetworkReady()) return false;
+  xSemaphoreTake(lock, portMAX_DELAY);
+  const bool accepted = !refreshRequested && !checking;
+  if (accepted) refreshRequested = true;
+  xSemaphoreGive(lock);
+  return accepted;
+}
 bool submit(Action action, bool lightOn, const PrintReceipt *receipt, uint16_t focusMinutes) {
   if(isFocus(action) && (focusMinutes<1 || focusMinutes>120))return false;
   if (!lock || !commands || !stops) return false;
@@ -602,7 +628,7 @@ bool submit(Action action, bool lightOn, const PrintReceipt *receipt, uint16_t f
   const bool stop = action == Action::StopWater;
   const bool enabled = isPairing(action) ? shared.yoyoEnabled : action==Action::AutoPrint ? shared.autoPrintKnown : isFocus(action) ? shared.focusKnown : (action == Action::Water || stop) ? shared.pumpEnabled :
                        action == Action::Light ? shared.lightEnabled : shared.printerEnabled;
-  if (!enabled || (action==Action::RepairYoyo && (!shared.yoyoRepairSupported || !shared.yoyoPaired || shared.yoyoLinkConnected || shared.yoyoRepairing)) || !shared.wifi || shared.networkRevision != device_settings::networkRevision() ||
+  if (!enabled || (action==Action::ReconnectYoyo && (!shared.yoyoReconnectSupported || !shared.yoyoPaired || shared.yoyoRepairing || shared.yoyoReconnecting)) || (action==Action::RepairYoyo && (!shared.yoyoRepairSupported || !shared.yoyoPaired || shared.yoyoLinkConnected || shared.yoyoRepairing)) || !shared.wifi || shared.networkRevision != device_settings::networkRevision() ||
       (action == Action::Water && !shared.waterAllowed) ||
       !device_settings::planterNetworkReady() || (!stop && (!fresh(shared, millis()) || shared.commandBlocked || calibrationBusy(shared.calibrationWrite) || calibrationBusy(shared.autoLightWrite))) ||
       (action == Action::Print && (!strcmp(shared.printerStatus, "recovery_required") ||

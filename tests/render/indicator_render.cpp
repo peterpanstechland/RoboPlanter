@@ -87,6 +87,7 @@ bool requestConnect(const char *, const char *) {
   throw std::runtime_error("Capture must not request a connection, even through the mock");
 }
 bool restoreDefaultWifi() { host_fixture::resetWifi(); return true; }
+bool requestReconnect() { return true; }
 PlanterEndpoint planterEndpoint() {
   PlanterEndpoint value;value.configured=true;
   strcpy(value.ssid,"example");strcpy(value.address,"http://192.0.2.1");return value;
@@ -98,6 +99,7 @@ bool planterNetworkReady() { return false; }
 namespace planter {
 bool begin() { return true; }
 State snapshot() { return hostState; }
+bool requestRefresh() { return true; }
 bool fresh(const State &state, uint32_t now) {
   // Same boundary contract as planter_client.cpp; no transport is linked.
   return state.received && state.wifi && state.ageKnown && state.networkFailure == NetworkFailure::None &&
@@ -409,6 +411,10 @@ void interactionTests() {
   require(!confirmOpen && submitted.empty(), "Unknown disconnected capabilities must block water/print");
 
   // Exercise the production main dispatcher, not a copy of settings routing.
+  resetPage(0,0);controlsOpen=confirmOpen=true;touch=ui::TouchGate();
+  tapRect(kConnection,available,900);
+  require(settings_ui::isOpen() && std::string(settings_ui::title())=="花盆连接" && !controlsOpen && !confirmOpen && submitted.empty(),
+          "Wi-Fi shortcut opens connection center and cannot confirm an actuator");
   available.commandBlocked = available.uncertain = false;
   resetPage(0, 1); controlsOpen = confirmOpen = true; touch = ui::TouchGate();
   confirmAction = planter::Action::Water;
@@ -567,7 +573,8 @@ void captureGarden(const std::filesystem::path &output) {
 }
 int main(int argc, char **argv) {
   try {
-    if (argc != 2) throw std::runtime_error("Usage: indicator_render OUTPUT_DIRECTORY");
+    if (argc != 2 && !(argc==3 && std::string(argv[2])=="--checks-only"))
+      throw std::runtime_error("Usage: indicator_render OUTPUT_DIRECTORY [--checks-only]");
     const std::filesystem::path output(argv[1]);
     std::filesystem::create_directories(output);
     setup();
@@ -579,6 +586,7 @@ int main(int argc, char **argv) {
     artStabilityTests();
     const unsigned interactionCount = checked;
     std::cout << "PASS: " << interactionCount << " real dispatcher, touch, garden, and focus assertions.\n";
+    if(argc>2 && std::string(argv[2])=="--checks-only")return 0;
     for (uint8_t themeId = 0; themeId < ui_theme::kCount; ++themeId) {
       const std::string prefix = "theme-" + std::to_string(themeId) + "-";
       captureScreens(output, themeId, prefix);

@@ -34,6 +34,7 @@ PAGES = [
     ("uart-printer", "UART 小票打印机", "D8 接线、中英文点阵、可选切纸、屏幕配对与冷启动检查。"),
     ("honor-platform", "从零搭建荣耀 YOYO Skill", "图文讲解技能文件、导入配置、安全检测、手机安装和 BLE 逐层验收。"),
     ("ble-integration", "BLE 完整接入教程", "官方工具参数、设备协议、MTU、加密绑定、回包语义和逐步验收。"),
+    ("system-api", "Skill 与三端工程 API", "Robot Phone、XIAO和Indicator的链路、状态归属、配对、读写接口、打印时序与恢复。"),
     ("device-platform", "自带硬件与 Device Kit", "统一能力描述、离线登记和验证，以及未来在线平台的边界。"),
     ("design-system", "产品视觉与交互设计", "工位搭子的视觉语言、角色、状态、动效和可访问性规则。"),
     ("social-playbook", "拍摄与分享", "项目图片、短视频、角色文案和接入经验的分享方法。"),

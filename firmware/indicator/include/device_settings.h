@@ -16,6 +16,8 @@ struct Network {
   bool secure = false;
 };
 struct WifiSnapshot {
+  uint32_t attemptStartedMs = 0, retryAtMs = 0;
+  uint16_t attempt = 0;
   bool ready = false, scanning = false, saved = false;
   // Connected Wi-Fi alone does not prove planter reachability. planterNetwork
   // additionally requires the exact PLANTER_WIFI_SSID configured in firmware.
@@ -46,7 +48,8 @@ bool requestScan();                   // Asynchronous; strongest 10 unique SSIDs
 // Returns request acceptance, not successful association. Save only after DHCP.
 // No enterprise identity or captive-portal login is provided by this interface.
 bool requestConnect(const char *ssid, const char *password);
-bool restoreDefaultWifi();            // Forget saved credentials, use config.h.
+bool restoreDefaultWifi();            // Select config.h network; save only after success.
+bool requestReconnect();              // Retry current credentials without erasing NVS.
 
 // Internal network-task API. UI callers must not invoke service() or WiFi.*.
 void service();

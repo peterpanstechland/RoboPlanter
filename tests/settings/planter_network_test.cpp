@@ -5,6 +5,7 @@
 #include <Preferences.h>
 #include "../../firmware/indicator/src/planter_client.cpp"
 #include "planter_presentation.h"
+#include "connection_presentation.h"
 // This network harness does not run the RP2040 sampler or invent soil data.
 namespace local_soil { Sample snapshot() { return Sample(); } bool notifyFocusComplete(){return true;} }
 unsigned checks = 0;
@@ -135,11 +136,36 @@ int main(int argc, char **argv) {
       settingsTestPostHook=[&](const String& body) {
         StaticJsonDocument<512> repair;CHECK(!deserializeJson(repair,body));
         CHECK(!strcmp(repair["action"]|"","repair_yoyo"));CHECK(repair.size()==2);
+        settingsTestPostBody="{\"ok\":true,\"request_id\":\""+String(repair["request_id"]|"")+"\",\"status\":\"completed\"}";
       };
       CHECK(planter::submit(planter::Action::RepairYoyo));workerOnce();CHECK(settingsTestPosts.size()==2);
       settingsTestStateBody=R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"yoyo":{"enabled":true,"paired":true}})";
       pollState();CHECK(!planter::snapshot().yoyoRepairSupported);
       CHECK(!planter::submit(planter::Action::RepairYoyo));
+      CHECK(!planter::submit(planter::Action::ReconnectYoyo)); // Older firmware has no reconnect capability.
+      settingsTestStateBody=R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"yoyo":{"enabled":true,"paired":true,"link_connected":true,"connected":true,"reconnect_supported":true,"notifications":true,"tool_seen":true,"tool_count":2,"last_tool_age_ms":900}})";
+      pollState();state=planter::snapshot();
+      CHECK(state.yoyoNotifications && state.yoyoToolSeen && state.yoyoToolCount==2 && state.yoyoToolAgeMs==900);
+      CHECK(planter::requestRefresh());CHECK(!planter::requestRefresh());CHECK(planter::snapshot().checking);
+      const auto beforeRead=settingsTestPosts.size();workerOnce();CHECK(settingsTestPosts.size()==beforeRead);
+      CHECK(!planter::snapshot().checking); // Read-only check never invokes a hardware action.
+      settingsTestPostHook=[&](const String& body) {
+        StaticJsonDocument<512> reconnect;CHECK(!deserializeJson(reconnect,body));
+        CHECK(!strcmp(reconnect["action"]|"","reconnect_yoyo"));CHECK(reconnect.size()==2);
+        settingsTestPostCode=-1; // Link dropped after POST: do not repeat it.
+      };
+      CHECK(planter::submit(planter::Action::ReconnectYoyo));CHECK(!planter::submit(planter::Action::ReconnectYoyo));
+      workerOnce();CHECK(settingsTestPosts.size()==beforeRead+1);CHECK(planter::snapshot().uncertain);
+      settingsTestNow+=2000;workerOnce();CHECK(settingsTestPosts.size()==beforeRead+1);
+      planter::acknowledgeUncertain();
+      settingsTestStateBody=R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"yoyo":{"enabled":true,"paired":false,"pairing":true,"pin":123456,"window_remaining_ms":120000}})";
+      pollState();CHECK(connection_ui::showPin(planter::snapshot(),millis()));
+      settingsTestNow+=kStaleMs+1;CHECK(!connection_ui::showPin(planter::snapshot(),millis()));
+      pollState();CHECK(connection_ui::showPin(planter::snapshot(),millis()));
+      CHECK(device_settings::requestConnect("another-network","test-password"));
+      CHECK(!connection_ui::showPin(planter::snapshot(),millis()));
+      CHECK(!planter::submit(planter::Action::ReconnectYoyo));
+      CHECK(!planter::requestRefresh());
     } else if (scenario == "sensors") {
       CHECK(planter::begin());
       settingsTestStateBody = R"({"schema_version":1,"device_id":"mock-planter","sample_age_ms":0,"ambient_light":{"enabled":true,"raw":0,"valid":true},"uv":{"raw":987,"valid":true}})";

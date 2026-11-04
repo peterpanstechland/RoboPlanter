@@ -70,11 +70,22 @@ int main() {
     CHECK(!strcmp(wifiState().connectedSsid, "after-scan"));
     CHECK(requestConnect("timeout", "valid-password")); service(); advance(200); advance(20001);
     CHECK(wifiState().phase == WifiPhase::Failed); CHECK(wifiState().error == WifiError::Timeout);
-    CHECK(restoreDefaultWifi()); service(); CHECK(!Preferences::values.count("wifi")); finishConnect();
-    CHECK(planterNetworkReady()); CHECK(!wifiState().saved);
+    const auto priorSaved = Preferences::values["wifi"];
+    CHECK(restoreDefaultWifi()); service(); CHECK(Preferences::values["wifi"] == priorSaved); finishConnect();
+    CHECK(planterNetworkReady()); CHECK(wifiState().saved);
+    const auto savedBeforeRetry = Preferences::values["wifi"];
+    const auto writesBeforeRetry = Preferences::writes;
+    const auto retryRevision = networkRevision();
+    CHECK(requestReconnect()); CHECK(!requestReconnect()); CHECK(!planterNetworkReady());
+    CHECK(networkRevision() != retryRevision); CHECK(!requestScan());
+    service(); CHECK(wifiState().phase == WifiPhase::Connecting);
+    finishConnect(); CHECK(planterNetworkReady());
+    CHECK(Preferences::values["wifi"] == savedBeforeRetry);
+    CHECK(Preferences::writes == writesBeforeRetry); // Reconnect never rewrites NVS.
     const auto liveRevision = networkRevision(); WiFi.link = WL_DISCONNECTED; service();
     CHECK(!planterNetworkReady()); CHECK(networkRevision() != liveRevision);
     CHECK(wifiState().error == WifiError::Disconnected);
+    CHECK(wifiState().retryAtMs == settingsTestNow + 30000);
     CHECK(requestConnect("open-network", "")); service(); finishConnect(); CHECK(wifiState().phase == WifiPhase::Connected);
     CHECK(requestConnect("missing", "valid-password")); service(); advance(200);
     WiFi.failure(WIFI_REASON_NO_AP_FOUND); service(); CHECK(wifiState().error == WifiError::NetworkNotFound);

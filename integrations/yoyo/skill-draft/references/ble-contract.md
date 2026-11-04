@@ -1,6 +1,6 @@
 # RoboPlanter BLE v2 契约
 
-本契约用于 1.0.1 联调。V 是公开协议标记，设备必须启用 ROBO_ENABLE_BONDED_YOYO；链路需要 Secure Connections + MITM + bonding，并且只有本机两分钟配对窗口内登记的那一部手机可以操作。端侧检查每次连接，不依赖提示词保密。旧令牌、旧单次读权限、无效 probe 均不是 v2 的回退方案。
+本契约用于 1.0.2 联调。V 是公开协议标记，设备必须启用 ROBO_ENABLE_BONDED_YOYO；链路需要 Secure Connections + MITM + bonding，并且只有本机两分钟配对窗口内登记的那一部手机可以操作。端侧检查每次连接，不依赖提示词保密。旧令牌、旧单次读权限、无效 probe 均不是 v2 的回退方案。
 
 固定 GATT 服务 a2f39c10-7e4b-4d21-8a61-0f3bc9d15001，特征 a2f39c11-7e4b-4d21-8a61-0f3bc9d15001，WRITE + NOTIFY，设备 RoboPlanter-A994。先订阅通知，等待写响应和本次业务通知；不把 ACK 或系统配对成功当动作完成。每命令最多240字节；由官方工具/系统处理 ATT 长写，技能不可自行拆串。最长中文场景命令需真机验证。
 

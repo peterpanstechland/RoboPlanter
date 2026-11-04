@@ -33,6 +33,7 @@ RoboPlanter 是一个以工位绿植为起点的硬件项目，将 YOYO 对话�
 | 打印 Logo、植物状态、待办和塔罗 | [工位日签](daily-ticket.md) |
 | 编写、导入和测试 YOYO Skill | [荣耀 Skill 图文教程](honor-platform.md) |
 | 了解 BLE 参数、鉴权和回包 | [BLE 接入教程](ble-integration.md) |
+| 接入 Phone、XIAO 与 Indicator，核对完整时序 | [Skill 与三端工程 API](system-api.md) |
 | 为其他控制板添加能力描述 | [Device Kit](device-platform.md) |
 | 排查供电、联网与设备问题 | [故障排查](troubleshooting.md) |
 | 修改角色、主题与动效 | [视觉与交互规范](design-system.md) |

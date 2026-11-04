@@ -16,7 +16,7 @@ using namespace device_settings;
 constexpr uint32_t kConnectTimeoutMs = 20000, kRetryMs = 30000;
 struct Credentials { uint32_t version = 1; char ssid[33] = {}, password[65] = {}; };
 struct WifiRequest {
-  bool present = false, save = false, forget = false;
+  bool present = false, save = false;
   bool retryKnownNetwork = false;
   uint32_t revision = 0;
   Credentials credentials;
@@ -31,6 +31,7 @@ Language language = Language::Chinese;
 uint8_t brightness = 80;
 bool initialized = false, preferencesReady = false;
 bool stopNetworkReserved = false;
+bool reconnectRequested = false;
 bool languageDirty = false, brightnessDirty = false, scanRequested = false;
 uint32_t revision = 1;
 WifiRequest pending, active;
@@ -117,6 +118,7 @@ void failConnection(WifiError error, bool retry) {
   if (active.revision == revision && !pending.present) {
     state.phase = WifiPhase::Failed;
     state.error = error;
+    state.retryAtMs = nextRetry;
     clearLinkLocked();
   }
 }
@@ -130,6 +132,9 @@ void startDisconnect() {
   if (active.revision == revision) {
     state.phase = WifiPhase::Connecting;
     state.error = WifiError::None;
+    state.attemptStartedMs = stageStarted;
+    state.retryAtMs = 0;
+    if (state.attempt < UINT16_MAX) ++state.attempt;
     clearLinkLocked();
   }
 }
@@ -150,6 +155,7 @@ void serviceConnection() {
         Guard guard;
         if (active.revision != revision || pending.present) return;
         state.phase = WifiPhase::Connected;
+        state.retryAtMs = 0;
         state.error = WifiError::None;
         copy(state.connectedSsid, active.credentials.ssid);
         copy(state.ip, WiFi.localIP().toString().c_str());
@@ -367,19 +373,19 @@ bool requestScan() {
   if (!initialized) return false;
   Guard guard;
   if (!state.ready) return false;
-  if (stopNetworkReserved || state.scanning || scanRequested || pending.present) { state.error = WifiError::Busy; return false; }
+  if (stopNetworkReserved || reconnectRequested || state.scanning || scanRequested || pending.present) { state.error = WifiError::Busy; return false; }
   scanRequested = true; state.scanning = true; state.error = WifiError::None;
   state.networkCount = 0;
   return true;
 }
-bool queueConnection(const char *ssid, const char *password, bool forget) {
+bool queueConnection(const char *ssid, const char *password, bool knownNetwork) {
   if (!initialized) return false;
   Guard guard;
   if (!state.ready) return false;
   if (!validCredentials(ssid, password)) { state.error = WifiError::InvalidInput; return false; }
-  if (stopNetworkReserved || pending.present) { state.error = WifiError::Busy; return false; }
-  pending.present = true; pending.forget = forget; pending.save = !forget;
-  pending.retryKnownNetwork = forget;
+  if (stopNetworkReserved || reconnectRequested || pending.present) { state.error = WifiError::Busy; return false; }
+  pending.present = true; pending.save = true;
+  pending.retryKnownNetwork = knownNetwork;
   pending.revision = ++revision;
   // A connect request supersedes a scan not yet started by the worker. An
   // already-running scan finishes first, then the new connection is applied.
@@ -391,6 +397,19 @@ bool queueConnection(const char *ssid, const char *password, bool forget) {
 }
 bool requestConnect(const char *ssid, const char *password) { return queueConnection(ssid, password, false); }
 bool restoreDefaultWifi() { return queueConnection(PLANTER_WIFI_SSID, PLANTER_WIFI_PASSWORD, true); }
+bool requestReconnect() {
+  if (!initialized) return false;
+  Guard guard;
+  if (!state.ready || stopNetworkReserved || pending.present || reconnectRequested ||
+      state.scanning || state.phase == WifiPhase::Connecting) return false;
+  reconnectRequested = true;
+  ++revision;
+  state.phase = WifiPhase::Connecting;
+  state.error = WifiError::None;
+  state.retryAtMs = 0;
+  clearLinkLocked();
+  return true;
+}
 uint32_t networkRevision() { if (!initialized) return 0; Guard guard; return revision; }
 bool planterNetworkReady() {
   if (!initialized) return false;
@@ -400,7 +419,7 @@ bool planterNetworkReady() {
 bool reserveNetworkForStop(uint32_t expectedRevision) {
   if (!initialized) return false;
   Guard guard;
-  if (!state.ready || stopNetworkReserved || pending.present || revision != expectedRevision ||
+  if (!state.ready || stopNetworkReserved || reconnectRequested || pending.present || revision != expectedRevision ||
       state.phase != WifiPhase::Connected || !state.planterNetwork) return false;
   stopNetworkReserved = true;
   return true;
@@ -444,13 +463,14 @@ void service() {
       wipe(&pending, sizeof(pending));
       pending = WifiRequest();
       changed = true;
+    } else if (reconnectRequested) {
+      // Only the worker owns active credentials; UI never receives them.
+      reconnectRequested = false;
+      active.revision = revision;
+      changed = true;
     }
   }
   if (changed) {
-    if (active.forget) {
-      const bool ok = preferencesReady && (!preferences.isKey("wifi") || preferences.remove("wifi"));
-      storageResult(ok);
-    }
     startDisconnect();
   }
   serviceConnection();
