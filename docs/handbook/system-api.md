@@ -2,11 +2,11 @@
 
 作者：潘石 · 彼得潘的科技谷
 
-基线：39606ca + 2026-11-04连接恢复修订 / 本地 Skill 1.0.2
+基线：39606ca + 2026-11-04连接恢复修订 / 本地 Skill 1.0.3
 
 ## 01 / 接口范围与版本
 
-本文覆盖 Robot Phone、XIAO Robot Board、SenseCAP Indicator 和 BLE 打印机之间的实际工程接口。基于源码39606ca及2026-11-04连接恢复修订，Skill源文件为1.0.2；这是实现快照，不等同于荣耀平台当前审核或手机安装版本。文中数值、请求号与回包均为格式示例，不是实时遥测。
+本文覆盖 Robot Phone、XIAO Robot Board、SenseCAP Indicator 和 BLE 打印机之间的实际工程接口。基于源码39606ca及2026-11-04连接恢复修订，Skill源文件为1.0.3；这是实现快照，不等同于荣耀平台当前审核或手机安装版本。文中数值、请求号与回包均为格式示例，不是实时遥测。
 
 | 组件 | 职责与实现入口 |
 | --- | --- |
@@ -16,7 +16,7 @@
 | Indicator RP2040 | GPIO27 采土壤，内置 UART 向 ESP32 应答；GPIO19 无源蜂鸣器。 |
 | EM5826H | 接收 XIAO 发送的 ESC/POS 位图及切纸命令；当前走 BLE。 |
 
-协议版本分开理解：HTTP schema_version=1；BLE 使用公开前缀 V（文档称 v2）；本地 Skill 包版本1.0.2。V 不是密钥，也不代表 HTTP schema。设备名示例 RoboPlanter-A994 的后缀由 XIAO 芯片身份生成，复制到另一台设备必须同步修改 Skill 配置。
+协议版本分开理解：HTTP schema_version=1；BLE 使用公开前缀 V（文档称 v2）；本地 Skill 包版本1.0.3。V 不是密钥，也不代表 HTTP schema。设备名示例 RoboPlanter-A994 的后缀由 XIAO 芯片身份生成，复制到另一台设备必须同步修改 Skill 配置。
 
 > 当前主线：手机 → BLE → XIAO；Indicator ↔ Wi-Fi/HTTP ↔ XIAO；XIAO → BLE → 打印机。手机不与 Indicator 蓝牙配对。云 MCP/MQTT 是可选辅助入口，A2A 未实现。
 
@@ -148,7 +148,9 @@ Wi-Fi 自动重试等待30秒，单次连接最多20秒，页面显示尝试编�
 
 | 字段 | 业务回包格式 | 解释 |
 | --- | --- | --- |
-| soil | S:raw:percent:valid:calibrated | ADC；相对土壤湿度%；有效/已校准标记。 |
+| soil | Soil:85% calibrated（示例） | 主控校准后的土壤湿度；未校准为Soil:uncalibrated，无效为Soil:unavailable。 |
+| soil_raw | ADC:raw:valid | 明确要求的诊断原始ADC。 |
+| desk | S85% T25.1C H49%（示例） | 已带单位的校准土壤湿度、温度和空气湿度。 |
 | env | E:temperature:humidity:valid | 摄氏度；空气相对湿度%。 |
 | ambient | B:raw:valid | 环境光 ADC 0–4095，不是 lux。 |
 | pm25 | M:value:valid | PM2.5，µg/m³。 |
@@ -160,24 +162,24 @@ Wi-Fi 自动重试等待30秒，单次连接最多20秒，页面显示尝试编�
 | printer | T:enabled:status | off/idle/queued/sent/fail；sent 不证明出纸。 |
 | auto | AUTO:0 或 AUTO:1 | 场景自动打印开关。 |
 
-兼容字段 desk→K:raw:temperature10:humidity（温度除10），以及 air→A:raw:valid、uv→U:raw:valid 仍在固件中。当前日常 Skill 不使用 desk，当前硬件以 SEN54 与 Light 替代旧 Air/UV。
+兼容字段 soil_v2→S:raw:percent:valid:calibrated、desk_v2→K:raw:temperature10:humidity（温度除10），以及 air→A:raw:valid、uv→U:raw:valid 仍在固件中。当前日常 Skill 不使用 desk，当前硬件以 SEN54 与 Light 替代旧 Air/UV。
 
 按字段解析：env 的 E:25.1:48.6:1 是数据，不是错误；错误 E:STALE、E:FIELD 等应按结构区分。未知值可为 x 或带 valid=0 的数字，不能单独依据数值判断可用。
 
 ## 08 / 土壤百分比与实时语义
 
 ```text
-V|S|soil  →  S:1740:85:1:1
+V|S|soil  →  Soil:85% calibrated
 V|S|env   →  E:25.1:48.6:1
 ```
 
-以上是格式示例：只有 valid=1 且 calibrated=1，percent 为0–100数值，才说“土壤湿度约85%”。换算由 XIAO 使用 NVS 干湿两点完成，屏幕和 YOYO 不各自再算一遍。0% 是有效数值；x 不是0。
+以上是格式示例：普通soil回包明确包含百分号及calibrated标记时才播报百分比。旧固件S格式仍须检查valid=1、calibrated=1及percent范围。换算由 XIAO 使用 NVS 干湿两点完成，屏幕和 YOYO 不各自再算一遍。0% 是有效数值；x 不是0。
 
 | 回包示例 | 正确呈现 |
 | --- | --- |
-| S:1740:x:1:0 | 土壤还没校准；引导到屏幕干湿校准。 |
-| S:1740:x:0:1 | 暂时没有有效土壤读数；不复用上次百分比。 |
-| S:2700:0:1:1 | 土壤相对湿度约0%；不是“传感器没数据”。 |
+| Soil:uncalibrated | 土壤还没校准；引导到屏幕干湿校准。 |
+| Soil:unavailable | 暂时没有有效土壤读数；不复用上次百分比。 |
+| Soil:0% calibrated | 土壤相对湿度约0%；不是“传感器没数据”。 |
 | E:x:x:0 | 暂无有效温湿度；不掩盖独立有效的土壤数据。 |
 | E:STALE | 采样超时；不以工具成功代替数据新鲜。 |
 
@@ -363,7 +365,7 @@ sequenceDiagram
   participant P2 as Indicator
   P2->>P1: soil POST + state GET（约每秒）
   P0->>P1: V|S|soil
-  P1->>P0: S:1740:85:1:1（示例）
+  P1->>P0: Soil:85% calibrated（示例）
   P0->>P1: V|S|env
   P1->>P0: E:25.1:48.6:1（示例）
   P0->>P1: V|C|focA0001|focus_start|1500000
@@ -498,3 +500,12 @@ XIAO通过mDNS发布`设备名小写.local`及`_roboplanter._tcp`服务。屏幕
 配网任务的JSON文档放在堆内存，HTTP任务栈为16384字节。本轮初版曾出现栈溢出循环重启，修复后串口35秒无panic，显示DMA与交换错误均为0，用户确认屏幕稳定。后续扩大JSON或任务职责时需重新检查真机栈余量。
 
 真机补充：已通过电脑的局域网读取验证XIAO恢复热点打开后上行网络仍连接，且本机mDNS查询收到来源与配置XIAO地址一致的响应。用户确认屏幕稳定、D7距离随物体变化。屏幕完整五阶段配网和更换实际路由器仍待现场验收，当前不写成已通过。
+
+
+## 22 / YOYO校准土壤回包验收（2026-11-04）
+
+普通BLE soil与desk默认回包改为明确带百分号的校准结果，原始ADC移到显式soil_raw；旧五段S格式和K摘要分别由soil_v2、desk_v2保留。HTTP soil.raw/soil.percent结构保持原样，Indicator、云接口和打印使用的校准计算未改。本轮初始读取为raw=1923、dry=2536、wet=1597，主控换算约65%，说明原标定有效，不是重新标定问题。
+
+新增纯函数输出测试覆盖真实标定例、0%/100%、失效、未校准、环境值独立失效以及全部20字节ATT长度上限。751项控制器检查和既有核心测试、两项Skill包检查、公开源码打包检查通过。XIAO修订固件已刷入并校验，原配网、绑定及标定保留。
+
+用户用手机现有入口询问土壤百分比后，确认“现在返回百分比，与屏幕接近”。这条Phone→XIAO→校准百分比回传的现场验收通过。本地Skill同步到1.0.3并生成包；本轮未替换或重新发布荣耀平台条目，手机安装版本不据此变更。

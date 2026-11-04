@@ -1,6 +1,6 @@
 # RoboPlanter 设备通信协议
 
-当前三端接入以[Skill 与三端工程 API](handbook/system-api.md)为入口：本地 Skill 1.0.2、加密绑定 BLE、Indicator 局域网 HTTP、XIAO 直连 BLE 打印机。1.0.2补充逐段连接诊断与保留绑定重连指引，平台安装版本须独立核对。本文后半保留早期串口打印与单次读取接口的兼容记录；它们不是当前 Skill 的回退链路。
+当前三端接入以[Skill 与三端工程 API](handbook/system-api.md)为入口：本地 Skill 1.0.3、加密绑定 BLE、Indicator 局域网 HTTP、XIAO 直连 BLE 打印机。1.0.3补充带单位的校准土壤回包、逐段连接诊断与保留绑定重连指引，平台安装版本须独立核对。本文后半保留早期串口打印与单次读取接口的兼容记录；它们不是当前 Skill 的回退链路。
 
 ## 两板连接
 

@@ -25,6 +25,7 @@
 #include "printer_calibration.h"
 #include "printer_transport.h"
 #include "ble_session.h"
+#include "ble_sensor_reply.h"
 #include "robo_config.h"
 #include "wifi_setup.h"
 #include "ble_printer.h"
@@ -114,6 +115,7 @@ uint32_t pairRepairStarted=0;
 robo::Result pairReconnectResult;
 bool pairReconnecting=false, pairToolSeen=false;
 uint32_t pairReconnectStarted=0, pairToolCount=0, pairToolAt=0;
+const char* pairLastQuery="";
 robo::BlePreparedWrite<MaxBleBytes> blePreparedWrite;
 String deviceId;
 bool sen54Detected = false;
@@ -672,6 +674,7 @@ void stateJson(JsonDocument& document) {
     yoyo["notifications"]=bleSession.notificationsEnabled();
     yoyo["tool_seen"]=pairToolSeen;
     yoyo["tool_count"]=pairToolCount;
+    yoyo["last_query"]=pairLastQuery;
     if(pairToolSeen)yoyo["last_tool_age_ms"]=uint32_t(now-pairToolAt);
     yoyo["repairing"]=bondAccess.repairing();
     yoyo["connect_count"]=pairConnections;
@@ -1163,16 +1166,24 @@ std::string bleResult(const robo::Result& result) {
 
 std::string bleQuery(const std::string& field) {
   const Sample current = copySample();
+  for(const char* known:{"soil","desk","env","soil_raw","soil_v2","desk_v2"})
+    if(field==known){pairLastQuery=known;break;}
   char buffer[32];
   if ((field == "soil" || field == "air" || field == "uv" || field == "env" || field == "ambient") &&
       static_cast<uint32_t>(millis() - current.timestamp) > 3000) return "E:STALE";
-  if(field=="desk") {
+  if(field=="soil" || field=="desk") {
+    robo::SensorCalibration saved;{Lock guard(coreMutex);saved=sensorCalibration;}
+    return field=="soil"?robo::soilBleReply(current.soil,current.soilValid,saved):
+      robo::deskBleReply(current.soil,current.soilValid,saved,current.temperature,current.humidity,current.environmentValid);
+  }
+  if(field=="soil_raw")return "ADC:"+(current.soilValid?std::to_string(current.soil):"x")+":"+(current.soilValid?"1":"0");
+  if(field=="desk_v2") {
     const std::string raw=current.soilValid?std::to_string(current.soil):"x";
     const std::string temp=current.environmentValid?std::to_string(int(lround(current.temperature*10))):"x";
     const std::string hum=current.environmentValid?std::to_string(int(lround(current.humidity))):"x";
     return "K:"+raw+":"+temp+":"+hum;
   }
-  if (field == "soil") {
+  if (field == "soil_v2") {
     robo::SensorCalibration saved;
     { Lock guard(coreMutex); saved = sensorCalibration; }
     const bool calibrated = saved.soilValid();
@@ -1386,6 +1397,7 @@ class ServerCallbacks : public BLEServerCallbacks {
         pairStage="authenticating";pairStarted=millis();
         pairAuthMode=pairFailure=-1;pairStackSuccess=false;pairEncryptionError=0;
         pairToolSeen=false;pairToolCount=0;
+        pairLastQuery="";
         memcpy(currentPeer,param->connect.remote_bda,6);
         bondAccess.connect(currentPeer);
         xQueueReset(bleQueue);

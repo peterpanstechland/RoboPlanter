@@ -209,6 +209,7 @@
     "tests/render/network_setup_stub.h",
     "tests/settings/network_setup_test.cpp",
     "tests/settings/wifi_setup_test.cpp",
-    "tests/settings/stubs/ESPmDNS.h"
+    "tests/settings/stubs/ESPmDNS.h",
+    "firmware/xiao/include/ble_sensor_reply.h"
   ]
 }

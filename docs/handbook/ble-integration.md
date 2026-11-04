@@ -32,11 +32,12 @@
 {"device_name":"RoboPlanter-A994","service_uuid":"a2f39c10-7e4b-4d21-8a61-0f3bc9d15001","characteristic_uuid":"a2f39c11-7e4b-4d21-8a61-0f3bc9d15001","command_array":[{"command":"V|S|desk","delay_ms":0}],"encoding":"utf-8","ack_type":"ack","expect_response":true,"response_timeout_ms":3000}
 ```
 
-响应`K:raw:temperature10:humidity`：温度除10才是°C，空气湿度为%，土壤仍是ADC，x为未知。
+2026-11-04修订后响应例如`S65% T25.1C H49%`：S为校准土壤湿度，T为摄氏温度，H为空气湿度，已经带单位，无需再次换算。Suncal为未校准，S--/T--/H--为对应读数无效。旧K格式迁移到desk_v2供诊断兼容，不用于日常播报。
 
 | 查询字段（V\|S\|字段） | 回包 | 说明 |
 | --- | --- | --- |
-| soil | S:raw:percent:valid:calibrated | 未标定不报告百分比或判断缺水 |
+| soil | Soil:65% calibrated（示例） | 主控校准百分比；未标定为Soil:uncalibrated，失效为Soil:unavailable |
+| soil_raw | ADC:raw:valid | 仅明确查询原始ADC时使用 |
 | env | E:temperature:humidity:valid | 空气温湿度 |
 | ambient | B:raw:valid | 光照ADC，不是lux |
 | pm25 | M:value:valid | PM2.5，µg/m³ |

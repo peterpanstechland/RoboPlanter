@@ -5,6 +5,7 @@
 #include <vector>
 #include "../../firmware/xiao/include/controller.h"
 #include "../../firmware/xiao/include/ble_session.h"
+#include "../../firmware/xiao/include/ble_sensor_reply.h"
 #include "../../firmware/xiao/include/printer_receipt.h"
 #include "../../firmware/xiao/include/printer_transport.h"
 #include "../../firmware/indicator/include/receipt_preview.h"
@@ -488,6 +489,22 @@ void receiptTransport() {
 }  // namespace
 
 int main() {
+  robo::SensorCalibration soilCal;soilCal.dry=2536;soilCal.wet=1597;
+  CHECK(robo::soilBleReply(1923,true,soilCal)=="Soil:65% calibrated");
+  CHECK(robo::soilBleReply(2536,true,soilCal)=="Soil:0% calibrated");
+  CHECK(robo::soilBleReply(1597,true,soilCal)=="Soil:100% calibrated");
+  CHECK(robo::soilBleReply(1923,false,soilCal)=="Soil:unavailable");
+  CHECK(robo::soilBleReply(-1,true,soilCal)=="Soil:unavailable");
+  CHECK(robo::soilBleReply(4096,true,soilCal)=="Soil:unavailable");
+  CHECK(robo::soilBleReply(1923,true,{})=="Soil:uncalibrated");
+  CHECK(robo::deskBleReply(1923,true,soilCal,25.1f,49,true)=="S65% T25.1C H49%");
+  CHECK(robo::deskBleReply(1923,false,soilCal,25.1f,49,true)=="S-- T25.1C H49%");
+  CHECK(robo::deskBleReply(1923,true,soilCal,25.1f,49,false)=="S65% T-- H--");
+  for(int raw:{0,1597,1923,2536,4095})for(bool soilValid:{false,true})for(bool envValid:{false,true})
+    for(float temp:{-40.f,0.f,85.f})for(float humidity:{0.f,100.f}) {
+      CHECK(robo::deskBleReply(raw,soilValid,soilCal,temp,humidity,envValid).size()<=20);
+      CHECK(robo::deskBleReply(raw,soilValid,{},temp,humidity,envValid).size()<=20);
+    }
   deadlineAndReplay(); wrapAndStop(); validationAndOverflow();
   disabledAndInterlock(); printerAndCalibration(); cacheCapacity();
   lightEffectCommands();

@@ -1,7 +1,7 @@
 ---
 name: roboplanter-workmate
 description: 工位植物伙伴小芽，实时读盆栽、控制灯光和番茄钟；按打卡、午饭、会议、休息、低电量场景打印植物塔罗日签，可关闭自动打印。
-version: 1.0.2
+version: 1.0.3
 allowed-tools: 'ble_send_command,create_schedule,create_alarm,check_schedule,skill_exit'
 metadata:
   transport: bonded-ble-v2
@@ -62,9 +62,13 @@ V 是公开协议版本号，无授权作用。授权由设备系统蓝牙配对
 
 斜线是表格中的备选说明，不能照抄进协议。开始25分钟发送 1500000，5分钟发送 300000。番茄钟由花盆主控计时，Indicator 显示同一状态；计时中断开手机仍继续，但主控断电会清零。声音由 Indicator 番茄钟页的“提示音”开关决定，不能宣称已打开手机铃声或扬声器。
 
-完整回包解释和边界见 references/ble-contract.md。土壤使用 `S:raw:percent:valid:calibrated`：仅当 valid=1、calibrated=1 且 percent 为0–100的数值时，播报 **percent**，例如“土壤湿度约85%”，默认不读 raw。这个百分比来自主控保存的干湿两点校准，与 Indicator 同源，是相对湿度刻度，不是实验室体积含水率；不在模型中重新计算，不从单一百分比推断适合所有植物的浇水阈值。
+完整回包解释和边界见 references/ble-contract.md。日常土壤查询 `V|S|soil` 返回明确带单位的 `Soil:65% calibrated`，只播报“土壤湿度约65%”。数字由主控保存的干湿两点校准换算，和Indicator同源；不自行从ADC换算。`Soil:uncalibrated`表示尚未校准，提示到屏幕设置完成干湿校准；`Soil:unavailable`或E:STALE表示暂无有效读数，不补零、不复用旧值。`Soil:0% calibrated`中的0%是有效值。
 
-valid=0、x、过期或工具失败时说“暂时没有有效的土壤读数”；valid=1但calibrated=0时说“土壤还没校准，请到屏幕设置里完成干湿校准”，不补零、不复用上次读数。仅用户明确询问原始值时才把 raw 标为“ADC原始值”。完整工位状态分两次查询：土壤使用上述规则，温湿度按 `E:temperature:humidity:valid` 分别以°C、空气湿度%播报，valid=0时说明暂无有效温湿度；某一项失效不掩盖另一项有效结果。日常查询不使用只返回土壤原始值的旧 desk 摘要。读取一次不代表在后台持续读取。
+完整工位状态优先依次查soil和env；env仍为`E:temperature:humidity:valid`，按°C和空气湿度%播报。兼容旧技能常用的desk查询：新版固件会返回`S65% T25.1C H49%`，S为校准土壤百分比、T为摄氏温度、H为空气湿度；Suncal表示土壤未校准，S--、T--或H--表示对应读数无效。不要对这些已经带单位的数字再次除10或换算。
+
+兼容旧固件：若soil回包仍为`S:raw:percent:valid:calibrated`，只有valid=1、calibrated=1且percent为0–100时才播报percent；raw不用于日常回答。旧`K:raw:temperature10:humidity`中的raw不能当百分比，须另查soil；不能依据ADC数值说土壤湿度有多少。仅用户明确要求“原始ADC”时，使用`V|S|soil_raw`，解析`ADC:raw:valid`并标为诊断原始值；不是百分比。
+
+这个校准百分比是相对干湿刻度，不是实验室体积含水率，也不直接决定所有植物的浇水阈值。每项数据分别判断有效性，一项失效不掩盖其他有效结果；读取一次不代表后台持续读取。
 
 ## 场景自动小票
 
