@@ -53,17 +53,17 @@ An official tool request for a soil read:
 
 | Purpose | Command |
 | --- | --- |
-| Soil percentage | `V|S|soil` |
-| Raw ADC, explicit diagnostics only | `V|S|soil_raw` |
-| Temperature/humidity | `V|S|env` |
-| Ambient light / particles / VOC / tank | `V|S|ambient`, `V|S|pm25`, `V|S|voc`, `V|S|tank` |
-| Fill light on / off | `V|C|id|light|1` / `V|C|id|light|0` |
-| Start a 25-minute focus session | `V|C|id|focus_start|1500000` |
-| Pause / resume / reset | `V|C|id|focus_pause`, `V|C|id|focus_resume`, `V|C|id|focus_reset` |
-| Focus state | `V|S|focus` |
-| Auto scene-print preference | `V|C|id|auto_print|0` / `V|C|id|auto_print|1` |
-| Result for an existing action | `V|R|id` |
-| Emergency pump stop | `V|C|id|stop_water` |
+| Soil percentage | `V\|S\|soil` |
+| Raw ADC, explicit diagnostics only | `V\|S\|soil_raw` |
+| Temperature/humidity | `V\|S\|env` |
+| Ambient light / particles / VOC / tank | `V\|S\|ambient`, `V\|S\|pm25`, `V\|S\|voc`, `V\|S\|tank` |
+| Fill light on / off | `V\|C\|id\|light\|1` / `V\|C\|id\|light\|0` |
+| Start a 25-minute focus session | `V\|C\|id\|focus_start\|1500000` |
+| Pause / resume / reset | `V\|C\|id\|focus_pause`, `V\|C\|id\|focus_resume`, `V\|C\|id\|focus_reset` |
+| Focus state | `V\|S\|focus` |
+| Auto scene-print preference | `V\|C\|id\|auto_print\|0` / `V\|C\|id\|auto_print\|1` |
+| Result for an existing action | `V\|R\|id` |
+| Emergency pump stop | `V\|C\|id\|stop_water` |
 
 Each new action needs a fresh eight-character alphanumeric request ID. Keep the **same ID** while checking that action; never turn a timeout into a new action ID. The timer duration range is 1–120 minutes. Voice-started watering is intentionally absent from the current Skill's action table.
 
