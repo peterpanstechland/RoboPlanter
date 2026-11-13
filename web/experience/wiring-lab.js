@@ -1,4 +1,4 @@
-import { boards, routes } from './wiring-data.js';
+import { boards, routes } from './wiring-data.js?v=20261113-copy';
 
 const $ = id => document.getElementById(id);
 const root = $('wiring-app');

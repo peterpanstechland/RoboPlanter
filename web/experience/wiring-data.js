@@ -1,13 +1,14 @@
-// Current bench wiring, 2026-10-29. Teaching only; no device requests or credentials.
+// Historical bench wiring, 2026-10-29. Current build uses D7 ultrasonic and BLE printing.
+// Teaching only; no device requests or credentials.
 export const boards = {
-  xiao: {label:'XIAO ROBOT BOARD',version:'V1.0 · 2026-10-29 接线',first:'climate'},
+  xiao: {label:'XIAO ROBOT BOARD',version:'V1.0 · 2026-10-29 历史接线',first:'climate'},
   indicator: {label:'SENSECAP INDICATOR D1',version:'D1 · 土壤 / 内置蜂鸣器',first:'indicator-adc'},
 };
-const doc='/docs/projects/2026/roboplanter/hardware-wiring';
+const doc='/zh-Hans/docs/projects/2026/roboplanter/hardware-wiring';
 export const routes=[
   {
     id:'water',board:'xiao',port:'SERVO2',title:'超声波水箱距离',kind:'water',protocol:'单 SIG / 3.3 V',
-    status:'测距与本机水箱参考已确认',line:'“先量距离，再谈还有多少水。”',
+    status:'历史 D9 接法；当前请改用 D7，见最新教程',line:'“先量距离，再谈还有多少水。”',
     address:'J5 pin1 · D9 / GPIO8 · Grove Ultrasonic Ranger v2.0',
     pins:[['power','独立 3.3 V','红线 VCC','3V3'],['ground','公共 GND','黑线 GND'],['signal','GPIO8 / J5 pin1','黄线 SIG'],['unused','白线 / Servo 5V','不接']],
     steps:[
@@ -31,19 +32,19 @@ export const routes=[
   },
   {
     id:'light',board:'xiao',port:'RGB',title:'WS2813 氛围灯',kind:'light',protocol:'DATA / 5 V',
-    status:'10颗 · 亮度24/255',line:'“嘴上说没事，灯先呼吸了。”',
+    status:'历史10颗方案；当前实物为30颗',line:'“嘴上说没事，灯先呼吸了。”',
     address:'J7 · D13 / GPIO40 → 板载缓冲 → DIN',
     pins:[['power','适配的 5 V','灯带 5V'],['ground','公共 GND','灯带 GND'],['signal','J7 pin1 / GPIO40','DIN'],['unused','其他信号按灯带实物','不混接 DIN / DOUT']],
     steps:[
-      ['保留已验收的低亮度配置','当前为10颗Grove WS2813，亮度上限24/255。核对灯带供电和总电流，不把所有Grove灯条当成同一协议。'],
+      ['区分历史样机与当前配置','这里保留10颗灯的历史模型；当前实物为30颗WS2813，亮度上限24/255。核对供电和总电流，配置以最新灯带教程为准。'],
       ['找输入箭头 DIN','GPIO40经板载缓冲从RGB口输出，接灯带输入端。电源和地按已验证线束连接，不能接输出端。'],
       ['本地效果与语音分开验证','常亮、呼吸、流动、彩虹代码已有。本地开关已记录；手机YOYO开关与情绪联动仍需单独验收。'],
     ],
-    caution:'网页灯效为教学动画，不连接真实灯带；不是标定过的植物生长灯。',doc:'/docs/projects/2026/roboplanter/ws2812-lighting',
+    caution:'网页灯效为教学动画，不连接真实灯带；不是标定过的植物生长灯。',doc:'/zh-Hans/docs/projects/2026/roboplanter/ws2812-lighting',
   },
   {
     id:'printer',board:'xiao',port:'SERVO4 + UART RX',title:'EM5826H 小票打印',kind:'printer',protocol:'TTL UART / 独立 12 V',
-    status:'中文 / 128行比例 / 切纸已通过',line:'“给今天留一张摸得着的回应。”',
+    status:'历史TTL方案；当前使用BLE，TTL线全部断开',line:'“给今天留一张摸得着的回应。”',
     address:'J14 pin1 D8/GPIO7 → 打印RX；J10 pin2 GPIO44 ← 打印TX',
     pins:[['external','独立 12 V','打印机电源'],['ground','公共 GND','打印机 GND'],['signal','D8 / GPIO7 / SERVO4','打印机 RX'],['signal2','UART RX / GPIO44','打印机 TX（3.3V）','UART'],['unused','GPIO43 / Servo5V','不接打印机']],
     steps:[
@@ -51,7 +52,7 @@ export const routes=[
       ['发送改到 D8，避开启动日志','SERVO4/GPIO7由固件映射为发送，接打印RX；打印TX返回原UART GPIO44。GPIO43留空，SERVO4不再接泵。'],
       ['预览、出纸和切刀逐项观察','中文、Logo、状态、待办、78牌日签和自动切纸已通过。128行光栅修正压扁，Indicator七页预览与纸面一致。'],
     ],
-    caution:'接返回线不等于已实现缺纸或机械反馈；超时只查原请求，不自动重印。',doc:'/docs/projects/2026/roboplanter/uart-printer',
+    caution:'当前不按此历史TTL模型接线：打印机使用BLE，所有TTL信号线断开；GPIO44留给D7超声波。见下方最新打印教程。',doc:'/zh-Hans/docs/projects/2026/roboplanter/uart-printer',
   },
   {
     id:'soil',board:'xiao',port:'SERVO3',title:'Light v1.2 环境光',kind:'lux',protocol:'模拟 ADC / 3.3 V',

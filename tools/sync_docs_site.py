@@ -1,8 +1,8 @@
 """Copy public RoboPlanter documentation into the explicitly selected Docusaurus checkout.
 
 No git, deployment, credential loading, or network operations are performed.
-Only the managed project directory, static/roboplanter, and a bounded projects
-index block are changed. Original vendor attachments and private settings are
+Only the managed project directory, static/roboplanter, a bounded projects
+index block and the project's sidebar translation are changed. Vendor attachments and private settings are
 never copied. Run from any directory with Python 3.10+.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from package_honor_skill import package as package_honor_skill
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_BASE = "/docs/projects/2026/roboplanter"
 PAGES = [
-    ("index", "工位搭子 · RoboPlanter", "从工位绿植开始，了解产品、硬件、YOYO Skill 与开放设备接入。"),
+    ("index", "YOYO工位绿植搭子 · RoboPlanter", "一盆真实绿植、一只像素精灵、一张工位日签：从项目故事到制作与工程接口。"),
     ("product-story", "项目介绍", "了解工位搭子的设备分工、日常使用与产品设计。"),
     ("hardware-catalog", "硬件图鉴与产品链接", "HONOR Robot Phone、Seeed XIAO ESP32-S3 Plus 与 SenseCAP Indicator D1 的官方产品图、用途和链接。"),
     ("hardware-wiring", "当前硬件连接", "2026-11-04接线、D7超声波、SEN54分线供电、BLE打印与当前验收状态。"),
@@ -130,6 +130,15 @@ def sync(site: Path, source_ref: str) -> dict:
             (destination / f"{slug}.md").write_text(front + "---\n\n" + content, encoding="utf-8")
     for destination, label in [(out, "RoboPlanter · Desk Companion"), (zh, "工位搭子 · RoboPlanter")]:
         (destination / "_category_.json").write_text(json.dumps({"label": label, "position": 1, "link": {"type": "doc", "id": "index"}}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # Docusaurus translates generated sidebar categories through current.json.
+    # A localized _category_.json alone does not translate the English label.
+    translations_path = site / "i18n/zh-Hans/docusaurus-plugin-content-docs/current.json"
+    translations = json.loads(translations_path.read_text(encoding="utf-8"))
+    translations["sidebar.docsSidebar.category.RoboPlanter · Desk Companion"] = {
+        "message": "YOYO工位绿植搭子",
+        "description": "The RoboPlanter project category in sidebar docsSidebar",
+    }
+    translations_path.write_text(json.dumps(translations, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     static = site / "static/roboplanter"
     if not static.resolve().is_relative_to(site) or static.resolve() != site / "static/roboplanter":
         raise ValueError("Static target must resolve inside the selected checkout")
@@ -159,7 +168,7 @@ def sync(site: Path, source_ref: str) -> dict:
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_bytes(path.read_bytes())
     (downloads / "manifest.json").write_text(json.dumps({"device_kit": kit, "starter": starter, "honor_skill": honor_skill, "print_models": prints}, indent=2) + "\n", encoding="utf-8")
-    block = "\n<!-- ROBOPLANTER:START -->\n### [工位搭子 · RoboPlanter](/docs/projects/2026/roboplanter/)\n\n你先下班，我负责发芽。YOYO Skill、XIAO 设备控制、Indicator 像素养成，以及可供自带硬件使用的离线 Device Kit。\n\n[互动体验与原创工位海报](https://peterpanstechland.github.io/roboplanter/) · [硬件与荣耀平台教程](/docs/projects/2026/roboplanter/hardware-quickstart) · [设备接入方案](/docs/projects/2026/roboplanter/device-platform)\n\n**进度：** 2026-10-29：手机加密配对及YOYO实时读取已通过；中文日签、预览一致性与自动切纸已验收。SEN54、环境光和超声波已接入，继电器空载通过；水箱和实际标定获用户确认后，本机12V/150mA泵已启用；屏幕已有校准工具与自动灯光阈值设置。手机动作仍待逐项验收，网页交互为模拟。\n<!-- ROBOPLANTER:END -->\n"
+    block = '\n<!-- ROBOPLANTER:START -->\n### [YOYO工位绿植搭子 · RoboPlanter](/docs/projects/2026/roboplanter/)\n\n你先下班，我负责发芽。一盆真实绿植、一只像素精灵、一张可以带走的工位日签。荣耀 YOYO 负责对话，XIAO 协调传感、灯光与蓝牙打印，Indicator 让陪伴常驻桌面。\n\n[先看懂作品](/docs/projects/2026/roboplanter/) · [互动体验](https://peterpanstechland.github.io/roboplanter/) · [DIY 制作](/docs/projects/2026/roboplanter/hardware-quickstart) · [工程 API](/docs/projects/2026/roboplanter/system-api) · [公开源码](https://github.com/peterpanstechland/RoboPlanter)\n\n**实机依据截至 2026-11-04：**手机校准百分比、保留绑定重连、30 灯珠绿→白→绿、D7 测距，以及屏幕预览到蓝牙打印和自动切纸已确认。完整手机场景、语音计时与实际换网仍在联调；[查看功能状态](/docs/projects/2026/roboplanter/roadmap-evidence)。\n<!-- ROBOPLANTER:END -->\n'
     en_block = "\n<!-- ROBOPLANTER:START -->\n### [RoboPlanter · A Talking Desk Garden](/docs/projects/2026/roboplanter/)\n\nYou clock out. I'll keep growing. A real plant, a pixel companion and a small paper ritual, built with HONOR YOYO, XIAO and SenseCAP Indicator.\n\n[English experience](https://peterpanstechland.github.io/roboplanter/en/) · [Build tutorial](/docs/projects/2026/roboplanter/hardware-quickstart) · [System API](/docs/projects/2026/roboplanter/system-api) · [Source](https://github.com/peterpanstechland/RoboPlanter)\n\n**Field evidence (November 4, 2026):** calibrated YOYO soil percentages, bond-preserving reconnect, 30-pixel status/fill light, D7 ultrasonic readings and screen-preview-to-BLE-printer output with correct proportions and automatic cutting confirmed. Full phone scene-print/focus and network-change acceptance remain outstanding. The web preview never controls hardware.\n<!-- ROBOPLANTER:END -->\n"
     indexes = [(site / "docs/projects/index.md", en_block), (site / "i18n/zh-Hans/docusaurus-plugin-content-docs/current/projects/index.md", block.replace(PUBLIC_BASE, "/zh-Hans" + PUBLIC_BASE))]
     for path, localized_block in indexes:
