@@ -324,7 +324,7 @@ daily 必须恰好八个整数字段，不接受布尔值、缺项、多余项�
 
 以上是格式示例，不能作为实际水箱参考值。先GET state读取calibration.revision；土壤0–4095且干湿差至少64；水箱20–3500mm且full&lt;stop&lt;empty，各相差至少10mm。一次只更新一组；reset不得夹带参考值。屏幕采五份稳定新读数后再保存。
 
-成功：200 {ok:true,revision:新值}。冲突：409 calibration_conflict；泵运行：409 pump_busy；保存失败：503 calibration_save_failed并使运行时校准失效。数据以单条带校验的NVS记录存储。响应丢失时读取状态核对revision和值，不自动覆盖。
+成功：200 `{ok:true,revision:新值}`。冲突：409 calibration_conflict；泵运行：409 pump_busy；保存失败：503 calibration_save_failed并使运行时校准失效。数据以单条带校验的NVS记录存储。响应丢失时读取状态核对revision和值，不自动覆盖。
 
 ```text
 POST /api/v1/auto-light

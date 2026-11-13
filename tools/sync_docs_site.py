@@ -31,7 +31,7 @@ PAGES = [
     ("plant-companion", "植物生长与陪伴养成", "真实物候、预测与陪伴反馈分开，逐步替换加速演示周期。"),
     ("crop-knowledge", "作物知识库与地区化方案", "官方农业资源、学术依据、开源工具及带适用条件的离线原型。"),
     ("ws2812-lighting", "WS2813 灯带与氛围交互", "灯带接线、四种模式、HTTP/BLE/CLI 控制与分阶段实机验收。"),
-    ("uart-printer", "UART 小票打印机", "D8 接线、中英文点阵、可选切纸、屏幕配对与冷启动检查。"),
+    ("uart-printer", "小票打印机：BLE与历史UART", "当前XIAO直接BLE打印；历史UART接线、中英文点阵、自动切纸和屏幕预览。"),
     ("honor-platform", "从零搭建荣耀 YOYO Skill", "图文讲解技能文件、导入配置、安全检测、手机安装和 BLE 逐层验收。"),
     ("ble-integration", "BLE 完整接入教程", "官方工具参数、设备协议、MTU、加密绑定、回包语义和逐步验收。"),
     ("system-api", "Skill 与三端工程 API", "Robot Phone、XIAO和Indicator的链路、状态归属、配对、读写接口、打印时序与恢复。"),
@@ -104,22 +104,32 @@ def sync(site: Path, source_ref: str) -> dict:
         raise ValueError("The docs site must be a separate checkout")
     out = site / "docs/projects/2026/roboplanter"
     out.mkdir(parents=True, exist_ok=True)
-    for position, (slug, title, description) in enumerate(PAGES, 1):
-        source = ROOT / "docs/wiring.md" if slug == "hardware-wiring" else ROOT / "docs/handbook" / f"{slug}.md"
-        content = public_markdown(source.read_text(encoding="utf-8"), source, source_ref)
-        front = f"---\ntitle: {json.dumps(title, ensure_ascii=False)}\ndescription: {json.dumps(description, ensure_ascii=False)}\nsidebar_position: {position}\nhide_title: true\n"
-        if slug == "index":
-            front += "slug: /projects/2026/roboplanter\n"
-        front += "---\n\n"
-        if slug == "index":
-            content = content.replace("## 按你的目标开始", "![工位搭子概念角色与原创工位海报，非实机拍摄](/roboplanter/assets/social-cover.png)\n\n## 按你的目标开始", 1)
-        (out / f"{slug}.md").write_text(front + content, encoding="utf-8")
-    (out / "_category_.json").write_text(json.dumps({"label": "工位搭子 · RoboPlanter", "position": 1, "link": {"type": "doc", "id": "index"}}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    # Same Chinese handbook remains available through the site's Chinese locale.
     zh = site / "i18n/zh-Hans/docusaurus-plugin-content-docs/current/projects/2026/roboplanter"
     zh.mkdir(parents=True, exist_ok=True)
-    for page in out.iterdir():
-        shutil.copy2(page, zh / page.name)
+    # English is the site's default locale. Never silently copy Chinese into it.
+    for position, (slug, title, description) in enumerate(PAGES, 1):
+        english = ROOT / "docs/handbook/en" / f"{slug}.md"
+        if not english.is_file():
+            raise ValueError(f"Missing English handbook page: {slug}")
+        chinese = ROOT / "docs/wiring.md" if slug == "hardware-wiring" else ROOT / "docs/handbook" / f"{slug}.md"
+        en_text = english.read_text(encoding="utf-8")
+        en_title = en_text.splitlines()[0].removeprefix("# ")
+        if re.search(r"[\u4e00-\u9fff]", en_title):
+            raise ValueError(f"English heading contains untranslated Chinese: {slug}")
+        en_description = next((line for line in en_text.splitlines()[1:] if line and line[0] not in "#>|![`"), en_title)[:200]
+        for locale, source, destination, label, summary in [
+            ("en", english, out, en_title, en_description),
+            ("zh-Hans", chinese, zh, title, description),
+        ]:
+            content = public_markdown(source.read_text(encoding="utf-8"), source, source_ref)
+            if locale == "zh-Hans":
+                content = content.replace(PUBLIC_BASE, "/zh-Hans" + PUBLIC_BASE)
+            front = f"---\ntitle: {json.dumps(label, ensure_ascii=False)}\ndescription: {json.dumps(summary, ensure_ascii=False)}\nsidebar_position: {position}\nhide_title: true\n"
+            if slug == "index":
+                front += "slug: /projects/2026/roboplanter\n"
+            (destination / f"{slug}.md").write_text(front + "---\n\n" + content, encoding="utf-8")
+    for destination, label in [(out, "RoboPlanter · Desk Companion"), (zh, "工位搭子 · RoboPlanter")]:
+        (destination / "_category_.json").write_text(json.dumps({"label": label, "position": 1, "link": {"type": "doc", "id": "index"}}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     static = site / "static/roboplanter"
     if not static.resolve().is_relative_to(site) or static.resolve() != site / "static/roboplanter":
         raise ValueError("Static target must resolve inside the selected checkout")
@@ -135,22 +145,32 @@ def sync(site: Path, source_ref: str) -> dict:
     kit = build_device_kit_bundle(downloads / "roboplanter-device-kit.zip")
     starter = package_starter(downloads / "roboplanter-starter.zip")
     honor_skill = package_honor_skill(downloads / "roboplanter-honor-skill.zip")
+    print_files = [ROOT / "design/print" / f"Body{n}.3mf" for n in (8, 9, 16)]
+    if not all(path.is_file() for path in print_files):
+        raise ValueError("Missing printable Body8, Body9 or Body16")
+    print_zip = downloads / "roboplanter-3d-print.zip"
+    with zipfile.ZipFile(print_zip, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        for path in print_files:
+            write_member(bundle, path.name, path.read_bytes())
+        write_member(bundle, "PRINT-LIST.txt", b"Print Body8, Body9 and Body16, one each. Body20 is a reference volume, not a printed part. Original manufacturing geometry is unchanged. Inspect slicing, fits, support and liquid/electronics separation for your own printer.\n")
+    prints = {"filename": print_zip.name, "files": 3, "sha256": hashlib.sha256(print_zip.read_bytes()).hexdigest()}
     for path in source_files():
         copy = static / "source" / (path.relative_to(ROOT).as_posix() + ".txt")
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_bytes(path.read_bytes())
-    (downloads / "manifest.json").write_text(json.dumps({"device_kit": kit, "starter": starter, "honor_skill": honor_skill}, indent=2) + "\n", encoding="utf-8")
+    (downloads / "manifest.json").write_text(json.dumps({"device_kit": kit, "starter": starter, "honor_skill": honor_skill, "print_models": prints}, indent=2) + "\n", encoding="utf-8")
     block = "\n<!-- ROBOPLANTER:START -->\n### [工位搭子 · RoboPlanter](/docs/projects/2026/roboplanter/)\n\n你先下班，我负责发芽。YOYO Skill、XIAO 设备控制、Indicator 像素养成，以及可供自带硬件使用的离线 Device Kit。\n\n[互动体验与原创工位海报](https://peterpanstechland.github.io/roboplanter/) · [硬件与荣耀平台教程](/docs/projects/2026/roboplanter/hardware-quickstart) · [设备接入方案](/docs/projects/2026/roboplanter/device-platform)\n\n**进度：** 2026-10-29：手机加密配对及YOYO实时读取已通过；中文日签、预览一致性与自动切纸已验收。SEN54、环境光和超声波已接入，继电器空载通过；水箱和实际标定获用户确认后，本机12V/150mA泵已启用；屏幕已有校准工具与自动灯光阈值设置。手机动作仍待逐项验收，网页交互为模拟。\n<!-- ROBOPLANTER:END -->\n"
-    indexes = [site / "docs/projects/index.md", site / "i18n/zh-Hans/docusaurus-plugin-content-docs/current/projects/index.md"]
-    for path in indexes:
+    en_block = "\n<!-- ROBOPLANTER:START -->\n### [RoboPlanter · A Talking Desk Garden](/docs/projects/2026/roboplanter/)\n\nYou clock out. I'll keep growing. A real plant, a pixel companion and a small paper ritual, built with HONOR YOYO, XIAO and SenseCAP Indicator.\n\n[English experience](https://peterpanstechland.github.io/roboplanter/en/) · [Build tutorial](/docs/projects/2026/roboplanter/hardware-quickstart) · [System API](/docs/projects/2026/roboplanter/system-api) · [Source](https://github.com/peterpanstechland/RoboPlanter)\n\n**Field evidence (November 4, 2026):** calibrated YOYO soil percentages, bond-preserving reconnect, 30-pixel status/fill light, D7 ultrasonic readings and screen-preview-to-BLE-printer output with correct proportions and automatic cutting confirmed. Full phone scene-print/focus and network-change acceptance remain outstanding. The web preview never controls hardware.\n<!-- ROBOPLANTER:END -->\n"
+    indexes = [(site / "docs/projects/index.md", en_block), (site / "i18n/zh-Hans/docusaurus-plugin-content-docs/current/projects/index.md", block.replace(PUBLIC_BASE, "/zh-Hans" + PUBLIC_BASE))]
+    for path, localized_block in indexes:
         original = path.read_text(encoding="utf-8")
         if "<!-- ROBOPLANTER:START -->" in original:
-            updated = re.sub(r"\n?<!-- ROBOPLANTER:START -->.*?<!-- ROBOPLANTER:END -->\n?", block, original, flags=re.S)
+            updated = re.sub(r"\n?<!-- ROBOPLANTER:START -->.*?<!-- ROBOPLANTER:END -->\n?", localized_block, original, flags=re.S)
         else:
             # Keep all existing portfolio content and insert just after front matter.
             boundary = original.find("\n---", 4) if original.startswith("---") else -1
             boundary = original.find("\n", boundary + 1) + 1 if boundary >= 0 else 0
-            updated = original[:boundary] + block + original[boundary:]
+            updated = original[:boundary] + localized_block + original[boundary:]
         path.write_text(updated, encoding="utf-8")
     return {"site": str(site), "pages_per_locale": len(PAGES), "locales": ["en", "zh-Hans"], "device_kit": kit, "starter": starter, "honor_skill": honor_skill}
 

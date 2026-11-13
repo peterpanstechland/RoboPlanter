@@ -1,25 +1,27 @@
 # RoboPlanter · 工位搭子
 
+**中文** · [English](README.en.md) · [English experience](https://peterpanstechland.github.io/roboplanter/en/)
+
 > 你先下班，我负责发芽。
 
 一盆能聊天、看工位环境、陪你专注并打印植物塔罗日签的桌面搭子。主控是 **Seeed XIAO ESP32-S3 Plus + XIAO Robot Board V1.0**，屏幕是 **SenseCAP Indicator D1**。这是当前台架实现；网页角色与接线动效是教学展示，不连接真实设备。
 
 [项目手册](https://peterpanstechland.github.io/docs/projects/2026/roboplanter/) · [互动展示与三维接线](https://peterpanstechland.github.io/roboplanter/#wiring-lab) · [最新接线总表](docs/wiring.md) · [YOYO 使用指南](docs/handbook/yoyo-companion.md)
 
-## 当前状态 · 2026-11-03
+## 当前状态 · 2026-11-04（英文文档更新：2026-11-13）
 
 | 功能 | 真实验收状态 |
 | --- | --- |
-| YOYO Skill | 新入口“RoboPlanter工位小芽”1.0.0 私有上架且问候通过；源码 1.0.1 改为读取校准土壤百分比，最近记录为私有审核中。旧入口实时读取已验收，新版手机调用继续复验 |
-| 环境采集 | SEN54 温湿度/PM2.5/VOC、环境光与 Indicator 土壤上传已联调；超声波曾通过，11月3日再次无读数，当前排障中 |
+| YOYO Skill | 新入口问候与读取通过；用户确认土壤返回校准百分比，与Indicator接近。本地Skill 1.0.3不代表平台已安装该版 |
+| 环境采集 | SEN54 温湿度/PM2.5/VOC、环境光与 Indicator 土壤上传已联调；超声波已改接D7/GPIO44恢复，用户确认屏幕稳定、距离随物体变化 |
 | 小票 | 中文、Logo、状态、三行待办、78张塔罗正逆位；128行图像比例正常，七页预览与实印一致，自动切纸通过 |
 | 灯带 | WS2813，30颗、亮度24/255；Indicator触发绿→白→绿及屏幕触摸已实测通过；在线绿灯、白色补光 |
 | 番茄钟 | 主控共享计时，设备接口开始/暂停/继续/结束已验证；手机控制和蜂鸣器听音待验收 |
 | 场景日签 | 打卡/午饭/会议/休息/低电量；默认自动打印，可持久关闭。设备侧会议小票已出纸，手机场景调用待验收 |
-| 水箱与水泵 | 水箱标定与一次0.5秒出水后停泵已由用户确认；当前超声波异常，水位保护禁止浇水。Skill尚未开放语音启动浇水 |
+| 水箱与水泵 | 水箱标定与一次0.5秒出水后停泵已由用户确认；D7超声波已恢复；移动探头后须核对原水箱标定，浇水仍受水位保护。Skill尚未开放语音启动浇水 |
 | 设备设置 | 中英文、亮度、Wi-Fi保存；植物养成、换主题、触摸及双缓冲显示已验收 |
 
-配对修复与30颗灯带版已刷入并通过相应现场反馈。最新排障程序只用于定位超声波信号故障，不代表问题已修复。历史版本与固件哈希见[超声波排障记录](docs/deployment/ultrasonic-diagnostics-20261103.md)和[平台状态](docs/deployment/honor-platform-status.md)。
+配对恢复与30颗灯带已通过相应现场反馈。11月4日普通重连保留绑定后读取成功，土壤百分比与屏幕接近；D7超声波恢复且屏幕稳定。历史版本与固件哈希见[超声波排障记录](docs/deployment/ultrasonic-diagnostics-20261103.md)和[平台状态](docs/deployment/honor-platform-status.md)。
 
 ## 连接关系
 
@@ -30,9 +32,9 @@ Indicator D1 ── 同一2.4GHz路由器 / 鉴权HTTP ─────┘
     └─ RP2040 Grove ADC：土壤传感器
 ```
 
-两块板分别USB/5V供电，无需互接UART或I²C。首次手机配对在 Indicator 的“设置 → 花盆连接 → YOYO 与场景小票 → 开启两分钟配对”查看六位码。正常绑定后的重连无需重新输入；重启重连仍待完整实测。BLE 不在技能文件存放令牌；HTTP 使用本地私有配置。
+两块板分别USB/5V供电，无需互接UART或I²C。首次手机配对在 Indicator 的“设置 → 花盆连接 → YOYO 与场景小票 → 开启两分钟配对”查看六位码。正常绑定后的重连无需重新输入；“重连手机（保留绑定）”已获用户读取确认，其他重启组合仍需分别验收。BLE 不在技能文件存放令牌；HTTP 使用本地私有配置。
 
-稳定功能的外设分配：SEN54接IIC、独立5V且信号3.3V；SERVO1为继电器GPIO42，SERVO3为环境光GPIO1，RGB为灯带GPIO40，土壤在Indicator GPIO27。打印机已改为 XIAO 直连 BLE，原 TTL 断开。超声波原用SERVO2/GPIO8，后改SERVO4/GPIO7对照；当前黄线已断开做空载排查，GPIO44仅准备替代检查，尚未启用。**M2不使用，GPIO43不接打印机。** 恢复接线前以[接线总表](docs/wiring.md)的当日排障状态为准。
+稳定功能的外设分配：SEN54接IIC、独立5V且信号3.3V；SERVO1为继电器GPIO42，SERVO3为环境光GPIO1，RGB为灯带GPIO40，土壤在Indicator GPIO27。打印机已改为 XIAO 直连 BLE，原 TTL 断开。超声波当前接UART/J10 RX/D7/GPIO44，红线独立3.3V、黑线共地，白线不接。SERVO4/D8留空；GPIO44不再接打印机TX。**M2不使用，GPIO43不接打印机。** 恢复接线前以[接线总表](docs/wiring.md)的当日排障状态为准。
 
 SEN54已取代DHT20和旧Air Quality；UV已换成Light v1.2。SEN54不提供CO₂或NOx。土壤未标定只报告原始值，超声波未标定只报告距离，游戏血条不代表真实植物健康。
 
@@ -69,4 +71,4 @@ Copy-Item firmware/indicator/include/local_config.example.h firmware/indicator/i
 
 [本机MCP](integrations/mcp/README.md)和[云MCP/MQTT](integrations/cloud/README.md)用于辅助查询，YOYO本地BLE不依赖云端。曾经通过本地网关读到真实土壤；可用性取决于网关与设备在线。云端写操作仍禁用。A2A未实现，NFC直达Skill入口尚待验证。
 
-本仓库保持原有可见性；公开下载来自逐文件白名单，不包含私有配置、备份或套件原始附件。源码可读不等于新增项目开源许可。原始资料说明见[reference](reference/README.md)，测试入口见[核心测试](tests/core/README.md)和[手册验收](docs/handbook/acceptance.md)。
+本仓库已公开；可复现源码下载来自逐文件白名单，不包含私有配置、备份或套件原始附件。源码可读不等于新增项目开源许可。原始资料说明见[reference](reference/README.md)，测试入口见[核心测试](tests/core/README.md)和[手册验收](docs/handbook/acceptance.md)。

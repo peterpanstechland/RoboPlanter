@@ -1,0 +1,20 @@
+{
+  "page": "https://www.honor.com/global/phones/honor-robot-phone/",
+  "assets": {
+    "precision-1.png": "https://www-file.honor.com/content/dam/honor/common/products/smartphone/honor-robot-phone/product/imgs/section-precision/honorrobotphone-precision-pic-1.png",
+    "precision-2.png": "https://www-file.honor.com/content/dam/honor/common/products/smartphone/honor-robot-phone/product/imgs/section-precision/honorrobotphone-precision-pic-2.png",
+    "precision-3.png": "https://www-file.honor.com/content/dam/honor/common/products/smartphone/honor-robot-phone/product/imgs/section-precision/honorrobotphone-precision-pic-3.png",
+    "camera-phone.png": "https://www-file.honor.com/content/dam/honor/common/products/smartphone/honor-robot-phone/product/imgs/section-camera/honorrobotphone-camera-phone.png",
+    "highlights-1.png": "https://www-file.honor.com/content/dam/honor/common/products/smartphone/honor-robot-phone/product/imgs/section-highlights/honorrobotphone-highlights-pic-1-1.png",
+    "official-front.png": "https://www-file.honor.com/content/dam/honor/common/product-list/product-series/honor-robot-phone/honor-robot-phone-silver-front.png"
+  },
+  "used_asset": {
+    "composition": "hero-integrated-official.png",
+    "phone_front": "https://www-file.honor.com/content/dam/honor/common/product-list/product-series/honor-robot-phone/honor-robot-phone-silver-front.png",
+    "gimbal_source_video": "https://www-file.honor.com/content/dam/honor/common/products/smartphone/honor-robot-phone/product/video/video-yoyo1-pc.mp4",
+    "frame_seconds": 1,
+    "operation": "Official front PNG alpha texture plus UV silhouette of official deployed gimbal, placed in the original CAD cradle in Blender. Phone silhouette is a display proxy, not manufacturer CAD. Official images have not been AI redrawn.",
+    "scene": "hero-integrated-official.blend",
+    "print_geometry": "Original Body8, Body9, Body16 unchanged; device inserts, plants, black finish and receipt are presentation objects."
+  }
+}

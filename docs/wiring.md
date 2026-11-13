@@ -40,11 +40,11 @@ Robot Phone / YOYO Skill ── 加密 BLE ──► XIAO Robot Board
 | Grove Light Sensor v1.2 | SERVO3/J13 pin1，D0 / XIAO GPIO1→黄线OUT | 红线另取3.3V，黑线共地，白线不接 | 遮挡/照亮后ADC明显变化 |
 | EM5826H热敏打印机 | **XIAO直接连接打印机BLE**；旧D8 TX与GPIO44返回线已断开 | 独立供电，开机双击走纸键开启蓝牙；USB/TTL不参与当前链路 | BLE中文、比例、78牌日签、切纸、Indicator预览一致通过 |
 | Grove WS2813灯带 | RGB/J7 pin1，D13 / XIAO GPIO40，经板载缓冲→DIN | 适配5V/GND；30颗，亮度上限24/255 | 在线绿灯、等待黄灯；屏幕开启白色补光并可保存自动阈值，物理验收见灯光教程 |
-| 电容式土壤探头 | Indicator左侧Grove ADC黄线→**RP2040 GPIO27** | 3.3V、GND；白线GPIO26不用 | 历史原始值链路通过；主控已存参考点，Skill 1.0.1优先读取校准百分比，手机端仍需复验 |
+| 电容式土壤探头 | Indicator左侧Grove ADC黄线→**RP2040 GPIO27** | 3.3V、GND；白线GPIO26不用 | 主控保存干湿参考点；2026-11-04用户确认YOYO返回校准百分比，与屏幕接近；本地Skill为1.0.3，不等同于平台安装版本 |
 | Indicator内置蜂鸣器 | RP2040 GPIO19，内部连接 | 无需外接 | 程序已部署、默认关闭；听音待验收 |
 | 无源NFC贴 | 无GPIO接线 | 手机读取标签 | 作为入口；直达指定Skill的链接待验证 |
 
-**M2/J9不使用。** SERVO4不再接打印机，目前用于超声波排障且黄线已拔下；不要在诊断期间复用。GPIO43/J10 TX留空，避免ESP32 ROM上电日志被打印出来。GPIO44也未启用为新测距口。BLE发送完成不等于传感确认出纸或切纸，仍需人工观察。
+**M2/J9不使用。** SERVO4/D8不再接打印机或超声波，当前留空；GPIO43/J10 TX也留空，避免ESP32 ROM上电日志被打印出来。GPIO44/J10 RX已配置为超声波单线双向SIG，不能再接打印机TX。BLE发送完成不等于传感确认出纸或切纸，仍需人工观察。
 
 ## SEN54替代关系与供电
 

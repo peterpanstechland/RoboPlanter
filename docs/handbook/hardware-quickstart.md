@@ -28,7 +28,7 @@ XIAO 是实际测量与执行控制器；Indicator 是 Wi-Fi 显示和手动操�
 电脑/Indicator -- 同一 2.4 GHz Wi-Fi --> XIAO HTTP API
 荣耀手机      -- BLE -----------> 同一台 XIAO
                                       |
-                             传感器 / 灯 / 外置泵驱动 / UART 打印机
+                             传感器 / 灯 / 继电器水泵 / BLE 打印机
 ```
 
 ![XIAO、手机、Indicator 与独立负载的连接逻辑](../../web/experience/assets/wiring-overview.svg)
@@ -55,7 +55,7 @@ Indicator 内部的 ESP32-S3 与 RP2040 已有连接。默认屏幕工程刷写 
 - 当前为 SEN54（独立5V、I²C信号3.3V）、Grove Light Sensor v1.2、Ultrasonic Ranger v2.0、Relay v1.2；DHT20、Air Quality和UV已替换。
 - 可选 GRB、800 kHz 单线灯带；明确灯数、电流及供电规格。
 - 水泵：独立额定电源、适合启动电流的外置驱动、3.3 V 可识别且高电平开启的逻辑输入、输入下拉、适合负载的续流/瞬态保护、可立即切断泵支路的物理开关。
-- 打印机：明确型号、额定供电、UART 波特率、TTL 电平和 ASCII/LF 协议；必要的电平转换。
+- 打印机：当前为EM5826H，独立供电、开机双击走纸键开启蓝牙，XIAO通过BLE发送ESC/POS位图与切纸命令。USB/TTL线断开，不与超声波GPIO44共用。历史UART方案仅供排障参考。
 
 **首次只使用一个已确认的 USB 供电/下载入口。** 附件要求不要同时连接 XIAO 顶部 USB-C 与 Robot Board 的 5 V USB-C。没有核对供电路径前，也不要把 USB、外部 5 V 和电池同时接上。载板电池口按原板设计使用，不接 12 V。
 
